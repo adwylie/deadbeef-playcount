@@ -13,7 +13,7 @@ endif()
 add_library(playcount SHARED playcount.c)
 target_compile_options(playcount PRIVATE
         -std=c99 -shared -O3 -Wall -pedantic
-        -DDDB_API_LEVEL=0 -DDDB_WARN_DEPRECATED=1
+        -DDDB_API_LEVEL=0 -DDDB_WARN_DEPRECATED=1 -DDEBUG
         -DPROJECT_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
         -DPROJECT_VERSION_MINOR=${PROJECT_VERSION_MINOR})
 

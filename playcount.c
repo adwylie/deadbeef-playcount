@@ -1,4 +1,7 @@
 #include <deadbeef.h>
+#include <stdio.h>
+
+#define trace(...) { fprintf(stderr, __VA_ARGS__); }
 
 static DB_functions_t *deadbeef;
 
@@ -9,13 +12,46 @@ static DB_functions_t *deadbeef;
 // > get song ID3v2 info
 // > update PCNT frame
 
-// When the user selects the action to reset the play count we want to set play
-// count to zero.
-// > have action in list of options for song right-click menu
-// > detect action selection event
-// > get song ID3v2 info
-// > update PCNT frame
+// Reset the play count to zero.
+// TODO: Do this in a separate thread?
 static int reset_playcount() {
+#ifdef DEBUG
+    trace("Enter function reset_playcount()\n")
+#endif
+    // Get the selected track.
+    int selected_count = deadbeef->pl_getselcount();
+
+    // Since this function is called via the context menu, if there is only
+    // one selected item then it must be the same as the cursor.
+    DB_playItem_t *track = NULL;
+    if (1 == selected_count) {
+
+        int idx = deadbeef->pl_get_cursor(PL_MAIN);
+        track = deadbeef->pl_get_for_idx_and_iter(idx, PL_MAIN);
+
+        if (!deadbeef->pl_is_selected(track)) {
+            trace("ERROR: Cursor position is not the selected track")
+#ifdef DEBUG
+        } else {
+            deadbeef->pl_lock();
+            const char *title = deadbeef->pl_find_meta(track, "title");
+            deadbeef->pl_unlock();
+            trace("Selected track: %s\n", title)
+#endif
+        }
+    }
+
+    // Read track ID3v2 information (or other tag structure).
+    // Set PCNT frame to zero.
+    // Write track ID3v2 information.
+
+#ifdef DEBUG
+    // Read to check proper write.
+#endif
+
+    // Remove the reference after we're done making changes.
+    deadbeef->pl_item_unref(track);
+
     return 0;
 }
 
