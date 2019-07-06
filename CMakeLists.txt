@@ -11,9 +11,11 @@ else()
 endif()
 
 add_library(playcount SHARED playcount.c)
+set_property(TARGET playcount PROPERTY C_STANDARD 99)
+
+set(CMAKE_C_FLAGS_DEBUG "-g -Og -Wall -pedantic -DDEBUG")
 target_compile_options(playcount PRIVATE
-        -std=c99 -shared -O3 -Wall -pedantic
-        -DDDB_API_LEVEL=0 -DDDB_WARN_DEPRECATED=1 -DDEBUG
+        -DDDB_API_LEVEL=0 -DDDB_WARN_DEPRECATED=1
         -DPROJECT_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
         -DPROJECT_VERSION_MINOR=${PROJECT_VERSION_MINOR})
 
