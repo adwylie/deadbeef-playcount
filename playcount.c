@@ -18,27 +18,31 @@ static int reset_playcount() {
 #ifdef DEBUG
     trace("Enter function reset_playcount()\n")
 #endif
-    // Get the selected track.
+    // Get the number of selected tracks.
+    // TODO: Handle multiple selected tracks.
     int selected_count = deadbeef->pl_getselcount();
 
+    if (selected_count != 1) {
+        return selected_count;
+    }
+
     // Since this function is called via the context menu, if there is only
-    // one selected item then it must be the same as the cursor.
-    DB_playItem_t *track = NULL;
-    if (1 == selected_count) {
+    // one selected item then it must be the same as the cursor item.
+    // TODO: Handle selection via search as well.
+    int idx = deadbeef->pl_get_cursor(PL_MAIN);
+    DB_playItem_t *track = deadbeef->pl_get_for_idx_and_iter(idx, PL_MAIN);
 
-        int idx = deadbeef->pl_get_cursor(PL_MAIN);
-        track = deadbeef->pl_get_for_idx_and_iter(idx, PL_MAIN);
-
-        if (!deadbeef->pl_is_selected(track)) {
-            trace("ERROR: Cursor position is not the selected track")
+    if (!deadbeef->pl_is_selected(track)) {
+        trace("ERROR: Cursor position is not the selected track")
+        deadbeef->pl_item_unref(track);
+        return 1;
 #ifdef DEBUG
-        } else {
-            deadbeef->pl_lock();
-            const char *title = deadbeef->pl_find_meta(track, "title");
-            deadbeef->pl_unlock();
-            trace("Selected track: %s\n", title)
+    } else {
+        deadbeef->pl_lock();
+        const char *title = deadbeef->pl_find_meta(track, "title");
+        deadbeef->pl_unlock();
+        trace("Selected track: %s\n", title)
 #endif
-        }
     }
 
     // Read track ID3v2 information (or other tag structure).
