@@ -15,6 +15,123 @@ static const char *METADATA_TYPE_TAG = ":TAGS";
 static const char *FILE_TYPE_MP3 = "MP3";
 static const char *METADATA_TYPE_ID3V2 = "ID3v2";
 
+static const char *PCNT_ID = "PCNT";
+
+// TODO: Look into ID3v2.2 status.
+// TODO: Look into APEv2 support.
+
+/**
+ * Create a new PCNT frame.
+ *
+ * The counter must be at least 32-bits long to begin with (uint32_t), and
+ * increases by one byte when an overflow would otherwise occur.
+ *
+ * Format is the same for both ID3v2.3 and 2.4. Documentation available at:
+ *   - http://id3.org/id3v2.3.0
+ *   - http://id3.org/id3v2.4.0-frames
+ *
+ * @return  The created frame.
+ */
+// TODO: Sounds like counter should be little endian.
+static DB_id3v2_frame_t *id3v2_create_pcnt_frame() {
+
+    const size_t data_size = sizeof(uint32_t);
+    DB_id3v2_frame_t *frame = malloc(sizeof(DB_id3v2_frame_t) + data_size);
+
+    if (NULL != frame) {
+        memset(frame, 0, sizeof(DB_id3v2_frame_t) + data_size);
+        strcpy(frame->id, PCNT_ID);
+        frame->size = data_size;
+    }
+
+    return frame;
+}
+
+/**
+ * Increment the play count value of an existing PCNT frame.
+ *
+ * A new frame may need to be allocated since the storage size of a play count
+ * frame is variable. It is up to the caller to determine if this has occurred
+ * by comparing argument and return pointers.
+ *
+ * @param frame  The PCNT frame.
+ * @return  An updated PCNT frame.
+ */
+// TODO: Assumes bits organized like how we write numbers (big endian).
+// https://chortle.ccsu.edu/AssemblyTutorial/Chapter-15/ass15_3.html
+// https://stackoverflow.com/questions/12791864/c-program-to-check-little-vs-big-endian
+// https://stackoverflow.com/questions/41087999/reading-the-mp3-idv2-tag-size
+// https://stackoverflow.com/questions/6401085/decoding-long-id3v2-frames
+static DB_id3v2_frame_t *id3v2_inc_pcnt_frame(DB_id3v2_frame_t *frame) {
+
+    // Scan from the right-most bit to find the first unset bit.
+    uint8_t position = 0;
+    uint8_t mask = 1u;
+    uint8_t *window = frame->data + frame->size - 1;
+
+    while (*window & mask) {
+        mask = mask << 1u;
+        position++;
+
+        // Simple 'circular' shifting.
+        if (0 == ((position + 1) % (sizeof(*window) * 8u))) {
+            mask = 1;
+            window -= 1;
+        }
+
+        // Determine if we've overrun the data (reading into flags).
+        // Reallocate adding an additional byte for play count value storage.
+        if (window < frame->data) {
+            const size_t data_size = frame->size + 1;
+            DB_id3v2_frame_t *f = malloc(sizeof(DB_id3v2_frame_t) + data_size);
+
+            if (NULL != f) {
+                memset(f, 0, sizeof(DB_id3v2_frame_t) + data_size);
+                strcpy(f->id, PCNT_ID);
+                f->size = data_size;
+
+                // Set play count. Right-most bit in first byte should be set,
+                // it's the 'new' byte that was just added.
+                (*((uint8_t *) f->data)) = 1;
+            }
+
+            return f;
+        }
+    }
+
+    // Set the first unset bit.
+    *window = *window | mask;
+
+    // Clear all bits to the right.
+    uint8_t clear_position = 0;
+    mask = 1u;
+    window = frame->data + frame->size - 1;
+
+    while (clear_position < position) {
+        *window = *window & ~mask;
+
+        mask = mask << 1u;
+        clear_position++;
+
+        // Simple 'circular' shifting.
+        if (0 == ((clear_position + 1) % (sizeof(*window) * 8u))) {
+            mask = 1u;
+            window -= 1;
+        }
+    }
+
+    return frame;
+}
+
+/**
+ * Set the play count value of an existing PCNT frame.
+ *
+ * @param frame  A pointer to the frame.
+ * @param count  The play count to set.
+ */
+static void id3v2_set_pcnt_frame(DB_id3v2_frame_t *frame, uintmax_t count) {
+}
+
 // TODO: When complete, message on issues #1143, #1812.
 // Main menu item to reset all track play counts to zero?
 // or just multi-select all items in a playlist.
@@ -82,7 +199,7 @@ static int increment_playcount() {
     // Note: API < 1.5 returns 0 for vfs.
     // TODO: Bug? local files start with '/', but that's classified as 'remote'.
     if (0 != strncmp("/", track_location, 1)
-            || !deadbeef->is_local_file(track_location)) {
+        || !deadbeef->is_local_file(track_location)) {
         // Can't update play count for remote audio, no access to metadata.
         // Not technically an error...
         return 0;
@@ -247,7 +364,7 @@ static int reset_playcount() {
     // Note: API < 1.5 returns 0 for vfs.
     // TODO: Bug? local files start with '/', but that's classified as 'remote'.
     if (0 != strncmp("/", track_location, 1)
-            || !deadbeef->is_local_file(track_location)) {
+        || !deadbeef->is_local_file(track_location)) {
         // Can't update play count for remote audio, no access to metadata.
         // Not technically an error...
         return 0;
@@ -351,6 +468,7 @@ static DB_plugin_action_t increment_playcount_action = {
 static DB_plugin_action_t *get_actions(DB_playItem_t *it) {
     return &increment_playcount_action;
 }
+
 #else
 static DB_plugin_action_t* get_actions(DB_playItem_t *it) {
     return &reset_playcount_action;
@@ -360,48 +478,48 @@ static DB_plugin_action_t* get_actions(DB_playItem_t *it) {
 // TODO: Handle .message DB_EV_SONGFINISHED to increment playcount.
 static DB_misc_t plugin = {
         .plugin = {
-            .type = DB_PLUGIN_MISC,
-            .api_vmajor = 1,
-            .api_vminor = 0,
-            .version_major = PROJECT_VERSION_MAJOR,
-            .version_minor = PROJECT_VERSION_MINOR,
+                .type = DB_PLUGIN_MISC,
+                .api_vmajor = 1,
+                .api_vminor = 0,
+                .version_major = PROJECT_VERSION_MAJOR,
+                .version_minor = PROJECT_VERSION_MINOR,
 
-            .name = "playcount",
-            .descr = "keep track of song play counts",
-            .copyright =
-                    "BSD 3-Clause License\n\n"
-                    "Copyright (c) 2019, Andrew Wylie\n"
-                    "All rights reserved.\n\n"
-                    "Redistribution and use in source and binary forms, with or without\n"
-                    "modification, are permitted provided that the following conditions are met:\n\n"
-                    "1. Redistributions of source code must retain the above copyright notice, this\n"
-                    "   list of conditions and the following disclaimer.\n\n"
-                    "2. Redistributions in binary form must reproduce the above copyright notice,\n"
-                    "   this list of conditions and the following disclaimer in the documentation\n"
-                    "   and/or other materials provided with the distribution.\n\n"
-                    "3. Neither the name of the copyright holder nor the names of its\n"
-                    "   contributors may be used to endorse or promote products derived from\n"
-                    "   this software without specific prior written permission.\n\n"
-                    "THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS \"AS IS\"\n"
-                    "AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE\n"
-                    "IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE\n"
-                    "DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE\n"
-                    "FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL\n"
-                    "DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR\n"
-                    "SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER\n"
-                    "CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,\n"
-                    "OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE\n"
-                    "OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.",
-            .website = "https://github.com/adwylie/deadbeef-playcount",
+                .name = "playcount",
+                .descr = "keep track of song play counts",
+                .copyright =
+                "BSD 3-Clause License\n\n"
+                "Copyright (c) 2019, Andrew Wylie\n"
+                "All rights reserved.\n\n"
+                "Redistribution and use in source and binary forms, with or without\n"
+                "modification, are permitted provided that the following conditions are met:\n\n"
+                "1. Redistributions of source code must retain the above copyright notice, this\n"
+                "   list of conditions and the following disclaimer.\n\n"
+                "2. Redistributions in binary form must reproduce the above copyright notice,\n"
+                "   this list of conditions and the following disclaimer in the documentation\n"
+                "   and/or other materials provided with the distribution.\n\n"
+                "3. Neither the name of the copyright holder nor the names of its\n"
+                "   contributors may be used to endorse or promote products derived from\n"
+                "   this software without specific prior written permission.\n\n"
+                "THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS \"AS IS\"\n"
+                "AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE\n"
+                "IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE\n"
+                "DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE\n"
+                "FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL\n"
+                "DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR\n"
+                "SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER\n"
+                "CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,\n"
+                "OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE\n"
+                "OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.",
+                .website = "https://github.com/adwylie/deadbeef-playcount",
 
-            .start = start,
-            .stop = stop,
-            .connect = NULL,
-            .disconnect = NULL,
-            .exec_cmdline = NULL,
-            .get_actions = get_actions,
-            .message = NULL,
-            .configdialog = NULL
+                .start = start,
+                .stop = stop,
+                .connect = NULL,
+                .disconnect = NULL,
+                .exec_cmdline = NULL,
+                .get_actions = get_actions,
+                .message = NULL,
+                .configdialog = NULL
         }
 };
 
