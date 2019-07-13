@@ -10,7 +10,7 @@ else()
     include_directories(${API_DIR})
 endif()
 
-add_library(playcount SHARED playcount.c)
+add_library(playcount SHARED playcount.c id3v2.c)
 set_property(TARGET playcount PROPERTY C_STANDARD 99)
 
 set(CMAKE_C_FLAGS_DEBUG "-g -Og -Wall -pedantic -DDEBUG")

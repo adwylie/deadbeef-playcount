@@ -1,8 +1,11 @@
-#include <deadbeef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include <deadbeef.h>
+
+#include "id3v2.h"
 
 #define trace(...) { fprintf(stderr, __VA_ARGS__); }
 
@@ -10,126 +13,43 @@ static DB_functions_t *deadbeef;
 
 static const char *FILE_TYPE_TAG = ":FILETYPE";
 static const char *LOCATION_TAG = ":URI";
-static const char *METADATA_TYPE_TAG = ":TAGS";
+static const char *TAG_TYPE_TAG = ":TAGS";
 
 static const char *FILE_TYPE_MP3 = "MP3";
-static const char *METADATA_TYPE_ID3V2 = "ID3v2";
-
-static const char *PCNT_ID = "PCNT";
-
-// TODO: Look into ID3v2.2 status.
+static const char *TAG_TYPE_ID3V2 = "ID3v2";
 // TODO: Look into APEv2 support.
 
 /**
- * Create a new PCNT frame.
+ * Get track metadata required for play count updates.
  *
- * The counter must be at least 32-bits long to begin with (uint32_t), and
- * increases by one byte when an overflow would otherwise occur.
+ * We're assuming that the given track won't be null, and that it will have
+ * metadata. We leave it up to the caller to check returned values.
  *
- * Format is the same for both ID3v2.3 and 2.4. Documentation available at:
- *   - http://id3.org/id3v2.3.0
- *   - http://id3.org/id3v2.4.0-frames
- *
- * @return  The created frame.
+ * @param track  A pointer to the track to get metadata information from.
+ * @param file_type  A pointer to the file type string.
+ * @param location  A pointer to the file location string.
+ * @param tag_type  A pointer to the tag type string.
  */
-// TODO: Sounds like counter should be little endian.
-static DB_id3v2_frame_t *id3v2_create_pcnt_frame() {
+static void pl_get_meta_pcnt(DB_playItem_t *track, const char **file_type,
+                             const char **location, const char **tag_type) {
 
-    const size_t data_size = sizeof(uint32_t);
-    DB_id3v2_frame_t *frame = malloc(sizeof(DB_id3v2_frame_t) + data_size);
+    deadbeef->pl_lock();
+    DB_metaInfo_t *track_meta = deadbeef->pl_get_metadata_head(track);
 
-    if (NULL != frame) {
-        memset(frame, 0, sizeof(DB_id3v2_frame_t) + data_size);
-        strcpy(frame->id, PCNT_ID);
-        frame->size = data_size;
+    while (track_meta) {
+        const char *key = track_meta->key;
+        const char *val = track_meta->value;
+
+        if (!strcmp(FILE_TYPE_TAG, key)) { *file_type = val; }
+        else if (!strcmp(LOCATION_TAG, key)) { *location = val; }
+        else if (!strcmp(TAG_TYPE_TAG, key)) { *tag_type = val; }
+
+        track_meta = track_meta->next;
+#ifdef DEBUG
+        trace("Found metadata '%s': '%s'\n", key, val)
+#endif
     }
-
-    return frame;
-}
-
-/**
- * Increment the play count value of an existing PCNT frame.
- *
- * A new frame may need to be allocated since the storage size of a play count
- * frame is variable. It is up to the caller to determine if this has occurred
- * by comparing argument and return pointers.
- *
- * @param frame  The PCNT frame.
- * @return  An updated PCNT frame.
- */
-// TODO: Assumes bits organized like how we write numbers (big endian).
-// https://chortle.ccsu.edu/AssemblyTutorial/Chapter-15/ass15_3.html
-// https://stackoverflow.com/questions/12791864/c-program-to-check-little-vs-big-endian
-// https://stackoverflow.com/questions/41087999/reading-the-mp3-idv2-tag-size
-// https://stackoverflow.com/questions/6401085/decoding-long-id3v2-frames
-static DB_id3v2_frame_t *id3v2_inc_pcnt_frame(DB_id3v2_frame_t *frame) {
-
-    // Scan from the right-most bit to find the first unset bit.
-    uint8_t position = 0;
-    uint8_t mask = 1u;
-    uint8_t *window = frame->data + frame->size - 1;
-
-    while (*window & mask) {
-        mask = mask << 1u;
-        position++;
-
-        // Simple 'circular' shifting.
-        if (0 == ((position + 1) % (sizeof(*window) * 8u))) {
-            mask = 1;
-            window -= 1;
-        }
-
-        // Determine if we've overrun the data (reading into flags).
-        // Reallocate adding an additional byte for play count value storage.
-        if (window < frame->data) {
-            const size_t data_size = frame->size + 1;
-            DB_id3v2_frame_t *f = malloc(sizeof(DB_id3v2_frame_t) + data_size);
-
-            if (NULL != f) {
-                memset(f, 0, sizeof(DB_id3v2_frame_t) + data_size);
-                strcpy(f->id, PCNT_ID);
-                f->size = data_size;
-
-                // Set play count. Right-most bit in first byte should be set,
-                // it's the 'new' byte that was just added.
-                (*((uint8_t *) f->data)) = 1;
-            }
-
-            return f;
-        }
-    }
-
-    // Set the first unset bit.
-    *window = *window | mask;
-
-    // Clear all bits to the right.
-    uint8_t clear_position = 0;
-    mask = 1u;
-    window = frame->data + frame->size - 1;
-
-    while (clear_position < position) {
-        *window = *window & ~mask;
-
-        mask = mask << 1u;
-        clear_position++;
-
-        // Simple 'circular' shifting.
-        if (0 == ((clear_position + 1) % (sizeof(*window) * 8u))) {
-            mask = 1u;
-            window -= 1;
-        }
-    }
-
-    return frame;
-}
-
-/**
- * Set the play count value of an existing PCNT frame.
- *
- * @param frame  A pointer to the frame.
- * @param count  The play count to set.
- */
-static void id3v2_set_pcnt_frame(DB_id3v2_frame_t *frame, uintmax_t count) {
+    deadbeef->pl_unlock();
 }
 
 // TODO: When complete, message on issues #1143, #1812.
@@ -137,164 +57,75 @@ static void id3v2_set_pcnt_frame(DB_id3v2_frame_t *frame, uintmax_t count) {
 // or just multi-select all items in a playlist.
 
 // When song has completed playing we want to increase it's play count.
-// TODO: call when a song has finished
+// TODO: Handle multiple selected tracks.
+// TODO: Handle selection via search as well. > ddb_playlist_t
+// TODO: Handle execution via event call.
 static int increment_playcount() {
 #ifdef DEBUG
-    trace("Entered function increment_playcount()\n")
+    trace("increment_playcount()\n")
 #endif
     // Get the number of selected tracks.
-    // TODO: Handle multiple selected tracks.
-    int selected_count = deadbeef->pl_getselcount();
-
-    if (selected_count != 1) {
-        return selected_count;
+    if (1 != deadbeef->pl_getselcount()) {
+        return 1;
     }
 
     // Since this function is called via the context menu, if there is only
     // one selected item then it must be the same as the cursor item.
-    // TODO: Handle selection via search as well. > ddb_playlist_t
     int idx = deadbeef->pl_get_cursor(PL_MAIN);
     DB_playItem_t *track = deadbeef->pl_get_for_idx_and_iter(idx, PL_MAIN);
 
     if (!deadbeef->pl_is_selected(track)) {
-        trace("ERROR: Cursor position is not the selected track\n")
         deadbeef->pl_item_unref(track);
         return 1;
-#ifdef DEBUG
-    } else {
-        deadbeef->pl_lock();
-        const char *title = deadbeef->pl_find_meta(track, "title");
-        deadbeef->pl_unlock();
-        trace("Selected track: %s\n", title)
-#endif
     }
 
-    // Read track ID3v2 information (or other tag structure).
+    // Read in required track metadata.
     const char *track_file_type = NULL;
     const char *track_location = NULL;
-    const char *track_metadata_type = NULL;
+    const char *track_tag_type = NULL;
 
-    deadbeef->pl_lock();
-    DB_metaInfo_t *track_meta = deadbeef->pl_get_metadata_head(track);
-
-    do {
-        const char *key = track_meta->key;
-
-        if (0 == strcmp(FILE_TYPE_TAG, key)) {
-            track_file_type = track_meta->value;
-            trace("'%s' is '%s'\n", key, track_meta->value)
-
-        } else if (0 == strcmp(LOCATION_TAG, key)) {
-            track_location = track_meta->value;
-            trace("'%s' is '%s'\n", key, track_meta->value)
-
-        } else if (0 == strcmp(METADATA_TYPE_TAG, key)) {
-            track_metadata_type = track_meta->value;
-            trace("'%s' is '%s'\n", key, track_meta->value)
-        }
-
-    } while ((track_meta = track_meta->next) != NULL);
-    deadbeef->pl_unlock();
+    pl_get_meta_pcnt(track, &track_file_type, &track_location, &track_tag_type);
 
     // Note: API < 1.5 returns 0 for vfs.
     // TODO: Bug? local files start with '/', but that's classified as 'remote'.
-    if (0 != strncmp("/", track_location, 1)
-        || !deadbeef->is_local_file(track_location)) {
+    if (strncmp("/", track_location, 1) || !deadbeef->is_local_file(track_location)) {
         // Can't update play count for remote audio, no access to metadata.
         // Not technically an error...
         return 0;
     }
 
     // Get the actual tag structure.
-    if (0 == strcmp(FILE_TYPE_MP3, track_file_type)) {
+    if (!strcmp(FILE_TYPE_MP3, track_file_type)) {
 
-        if (0 != strstr(track_metadata_type, METADATA_TYPE_ID3V2)) {
-            // Update ID3v2 PCNT frame, create it if it doesn't exist.
-            DB_id3v2_tag_t id3v2;
-            memset(&id3v2, 0, sizeof(id3v2));
-
+        if (strstr(track_tag_type, TAG_TYPE_ID3V2)) {
+            // Update the frame if it exists, otherwise create and set it.
+            DB_id3v2_tag_t id3v2 = {0};
             DB_FILE *track_file = deadbeef->fopen(track_location);
-            if (!track_file) { return -1; }
+            deadbeef->junk_id3v2_read_full(track, &id3v2, track_file);
 
-            int err = deadbeef->junk_id3v2_read_full(track, &id3v2, track_file);
-            if (err) { return err; }
+            DB_id3v2_frame_t *pcnt = id3v2_tag_frame_get_pcnt(&id3v2);
 
-            //
-            int minor = id3v2.version[0];
-            int revision = id3v2.version[1];
-            trace("ID3v2.%d.%d\n", minor, revision)
-
-            uint8_t pcnt_found = 0;
-
-            for (DB_id3v2_frame_t *f = id3v2.frames; f; f = f->next) {
-                trace("id = %s\n", f->id)
-
-                if (0 == strcmp("PCNT", f->id)) {
-                    trace("found PCNT, size: %d bytes\n", f->size)
-                    pcnt_found++;
-
-                    // TODO:
-                    // set rightmost unset bit (let position be k),
-                    // toggle all bits to the right of k
-                    (*((uint32_t *) f->data))++;
-                }
+            if (!pcnt) {
+                trace("Didn't find PCNT frame, creating & incrementing count.\n")
+                pcnt = id3v2_frame_pcnt_create();
+                id3v2_tag_frame_add(&id3v2, pcnt);
             }
 
-            DB_id3v2_frame_t *frame = NULL;
-            DB_id3v2_frame_t *tail = NULL;
+            trace("Incrementing PCNT frame count.\n")
+            id3v2_frame_pcnt_inc(pcnt);
 
-            if (!pcnt_found) {
-                trace("didn't find PCNT, making one\n")
-                // Create the frame if it wasn't found (with a value of 1).
-                // TODO: test frame is not NULL
-                frame = malloc(sizeof(DB_id3v2_frame_t) + sizeof(uint32_t));
-                memset(frame, 0, sizeof(DB_id3v2_frame_t));
-
-                strcpy(frame->id, "PCNT");
-                frame->size = sizeof(uint32_t);
-
-                uint32_t count = 1;
-                memcpy(frame->data, &count, frame->size);
-
-                // Add the PCNT frame to the ID3v2 tag.
-                for (tail = id3v2.frames; tail && tail->next; tail = tail->next);
-
-                if (tail) {
-                    tail->next = frame;
-                } else {
-                    id3v2.frames = frame;
-                }
-            }
-
-            // Update PCNT frame/value.
-            trace("Writing file\n")
+            trace("Writing file.\n")
             FILE *actual_file = fopen(track_location, "r+");
             fseek(actual_file, 0, SEEK_SET);
             deadbeef->junk_id3v2_write(actual_file, &id3v2);
             fclose(actual_file);
-            trace("Wrote file\n")
 
-            if (frame != NULL) {
-                trace("freeing created PCNT frame\n")
-                // Remove the PCNT frame from the ID3v2 tag.
-                if (tail) {
-                    tail->next = NULL;
-                } else {
-                    id3v2.frames = NULL;
-                }
-
-                free(frame);
-            }
-
+            trace("Freeing resources.\n")
+            free(id3v2_tag_frame_rem_pcnt(&id3v2));
             deadbeef->junk_id3v2_free(&id3v2);
-
             deadbeef->fclose(track_file);
         }
     }
-
-#ifdef DEBUG
-    // Read to check proper write.
-#endif
 
     // Remove the reference after we're done making changes.
     deadbeef->pl_item_unref(track);
@@ -302,138 +133,76 @@ static int increment_playcount() {
 }
 
 // Reset the play count to zero.
-// TODO: Do this in a separate thread?
+// TODO: Handle multiple selected tracks.
+// TODO: Handle selection via search as well. > ddb_playlist_t
 static int reset_playcount() {
 #ifdef DEBUG
-    trace("Entered function reset_playcount()\n")
+    trace("reset_playcount()\n")
 #endif
     // Get the number of selected tracks.
-    // TODO: Handle multiple selected tracks.
-    int selected_count = deadbeef->pl_getselcount();
-
-    if (selected_count != 1) {
-        return selected_count;
+    if (1 != deadbeef->pl_getselcount()) {
+        return 1;
     }
 
     // Since this function is called via the context menu, if there is only
     // one selected item then it must be the same as the cursor item.
-    // TODO: Handle selection via search as well. > ddb_playlist_t
     int idx = deadbeef->pl_get_cursor(PL_MAIN);
     DB_playItem_t *track = deadbeef->pl_get_for_idx_and_iter(idx, PL_MAIN);
 
     if (!deadbeef->pl_is_selected(track)) {
-        trace("ERROR: Cursor position is not the selected track")
         deadbeef->pl_item_unref(track);
         return 1;
-#ifdef DEBUG
-    } else {
-        deadbeef->pl_lock();
-        const char *title = deadbeef->pl_find_meta(track, "title");
-        deadbeef->pl_unlock();
-        trace("Selected track: %s\n", title)
-#endif
     }
 
-    // Read track ID3v2 information (or other tag structure).
+    // Read in required track metadata.
     const char *track_file_type = NULL;
     const char *track_location = NULL;
     const char *track_metadata_type = NULL;
 
-    deadbeef->pl_lock();
-    DB_metaInfo_t *track_meta = deadbeef->pl_get_metadata_head(track);
-
-    do {
-        const char *key = track_meta->key;
-
-        if (0 == strcmp(FILE_TYPE_TAG, key)) {
-            track_file_type = track_meta->value;
-            trace("'%s' is '%s'\n", key, track_meta->value)
-
-        } else if (0 == strcmp(LOCATION_TAG, key)) {
-            track_location = track_meta->value;
-            trace("'%s' is '%s'\n", key, track_meta->value)
-
-        } else if (0 == strcmp(METADATA_TYPE_TAG, key)) {
-            track_metadata_type = track_meta->value;
-            trace("'%s' is '%s'\n", key, track_meta->value)
-        }
-
-    } while ((track_meta = track_meta->next) != NULL);
-    deadbeef->pl_unlock();
+    pl_get_meta_pcnt(track, &track_file_type, &track_location, &track_metadata_type);
 
     // Note: API < 1.5 returns 0 for vfs.
     // TODO: Bug? local files start with '/', but that's classified as 'remote'.
-    if (0 != strncmp("/", track_location, 1)
-        || !deadbeef->is_local_file(track_location)) {
+    if (strncmp("/", track_location, 1) || !deadbeef->is_local_file(track_location)) {
         // Can't update play count for remote audio, no access to metadata.
         // Not technically an error...
         return 0;
     }
 
     // Get the actual tag structure.
-    if (0 == strcmp(FILE_TYPE_MP3, track_file_type)) {
+    if (!strcmp(FILE_TYPE_MP3, track_file_type)) {
 
-        if (0 != strstr(track_metadata_type, METADATA_TYPE_ID3V2)) {
-            // Update ID3v2 PCNT frame if it exists.
-            DB_id3v2_tag_t id3v2;
-            memset(&id3v2, 0, sizeof(id3v2));
-
+        if (strstr(track_metadata_type, TAG_TYPE_ID3V2)) {
+            // If the frame exists then reset its count, but don't create it.
+            DB_id3v2_tag_t id3v2 = {0};
             DB_FILE *track_file = deadbeef->fopen(track_location);
-            if (!track_file) { return -1; }
+            deadbeef->junk_id3v2_read_full(track, &id3v2, track_file);
 
-            int err = deadbeef->junk_id3v2_read_full(track, &id3v2, track_file);
-            if (err) { return err; }
+            DB_id3v2_frame_t *pcnt = id3v2_tag_frame_get_pcnt(&id3v2);
 
-            //
-            int minor = id3v2.version[0];
-            int revision = id3v2.version[1];
-            trace("ID3v2.%d.%d\n", minor, revision)
+            if (pcnt) {
+                trace("Found PCNT frame, resetting count.\n")
+                id3v2_frame_pcnt_reset(pcnt);
 
-            uint8_t pcnt_found = 0;
-
-            for (DB_id3v2_frame_t *f = id3v2.frames; f; f = f->next) {
-                trace("id = %s\n", f->id)
-
-                if (0 == strcmp("PCNT", f->id)) {
-                    trace("found PCNT, size: %d bytes\n", f->size)
-                    pcnt_found++;
-
-                    uint8_t *data = f->data;
-                    for (int i = 0; i < f->size; i++) {
-                        data[i] = 0;
-                    }
-                }
-            }
-
-            // Update PCNT frame/value.
-            if (pcnt_found) {
-                trace("Writing file\n")
+                trace("Writing file.\n")
                 FILE *actual_file = fopen(track_location, "r+");
                 fseek(actual_file, 0, SEEK_SET);
                 deadbeef->junk_id3v2_write(actual_file, &id3v2);
                 fclose(actual_file);
-                trace("Wrote file\n")
             }
 
+            trace("Freeing resources.\n")
             deadbeef->junk_id3v2_free(&id3v2);
-
             deadbeef->fclose(track_file);
         }
     }
 
-#ifdef DEBUG
-    // Read to check proper write.
-#endif
-
     // Remove the reference after we're done making changes.
     deadbeef->pl_item_unref(track);
-
     return 0;
 }
 
-// Show play count information in the GUI.
-// > ???
-
+// TODO: Show play count information in the GUI.
 
 static int start() {
     // Note: Plugin will be unloaded if start returns -1.
