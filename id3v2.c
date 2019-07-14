@@ -57,6 +57,11 @@ uint8_t id3v2_frame_pcnt_inc(DB_id3v2_frame_t *frame) {
 static uint8_t id3v2_frame_pcnt_set(DB_id3v2_frame_t *frame, uint32_t count) {
     if (sizeof(uint32_t) == frame->size) {
         *((uint32_t *) frame->data) = htonl(count);
+#ifdef DEBUG
+        trace("Wrote count of %d.\n", count)
+        uint32_t new_count = ntohl(*(uint32_t *) frame->data);
+        trace("Actual new count is %d.\n", new_count)
+#endif
         return 0;
 
     } else {

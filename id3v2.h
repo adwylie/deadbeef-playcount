@@ -17,7 +17,7 @@
  *
  * @return  The created frame.
  */
-DB_id3v2_frame_t *id3v2_frame_pcnt_create();
+DB_id3v2_frame_t *id3v2_frame_pcnt_create(void);
 
 /**
  * Increment the play count value of an existing PCNT frame.
@@ -27,7 +27,7 @@ DB_id3v2_frame_t *id3v2_frame_pcnt_create();
  * @param frame  A pointer to the PCNT frame.
  * @return  Return non-zero if an error occurred, zero otherwise.
  */
-uint8_t id3v2_frame_pcnt_inc(DB_id3v2_frame_t *frame);
+uint8_t id3v2_frame_pcnt_inc(DB_id3v2_frame_t *pcnt_frame);
 
 /**
  * Reset the play count value of an existing PCNT frame.
@@ -35,7 +35,7 @@ uint8_t id3v2_frame_pcnt_inc(DB_id3v2_frame_t *frame);
  * @param frame  A pointer to the PCNT frame.
  * @return  Return non-zero if an error occurred, zero otherwise.
  */
-uint8_t id3v2_frame_pcnt_reset(DB_id3v2_frame_t *frame);
+uint8_t id3v2_frame_pcnt_reset(DB_id3v2_frame_t *pcnt_frame);
 
 /**
  * Add a frame to an ID3v2 tag.
