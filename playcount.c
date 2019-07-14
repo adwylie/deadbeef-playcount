@@ -111,9 +111,9 @@ static int reset_track_playcount(DB_playItem_t *track) {
     // Get required track metadata.
     const char *track_file_type = NULL;
     const char *track_location = NULL;
-    const char *track_metadata_type = NULL;
+    const char *track_tag_type = NULL;
 
-    pl_get_meta_pcnt(track, &track_file_type, &track_location, &track_metadata_type);
+    pl_get_meta_pcnt(track, &track_file_type, &track_location, &track_tag_type);
 
     // Note: API < 1.5 returns 0 for vfs.
     // TODO: Bug? local files start with '/', but that's classified as 'remote'.
@@ -126,7 +126,7 @@ static int reset_track_playcount(DB_playItem_t *track) {
     if (!strcmp(FILE_TYPE_MP3, track_file_type)) {
 
         // Handle ID3v2 tags.
-        if (strstr(track_metadata_type, TAG_TYPE_ID3V2)) {
+        if (strstr(track_tag_type, TAG_TYPE_ID3V2)) {
 
             // If the frame exists then reset its count, but don't create it.
             DB_id3v2_tag_t id3v2 = {0};
