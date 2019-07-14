@@ -54,34 +54,8 @@ static void pl_get_meta_pcnt(DB_playItem_t *track, const char **file_type,
     deadbeef->pl_unlock();
 }
 
-// TODO: When complete, message on issues #1143, #1812.
-// Main menu item to reset all track play counts to zero?
-// or just multi-select all items in a playlist.
-
-// When song has completed playing we want to increase it's play count.
-// TODO: Handle multiple selected tracks.
-// TODO: Handle selection via search as well. > ddb_playlist_t
-// TODO: Handle execution via event call.
-static int increment_playcount() {
-#ifdef DEBUG
-    trace("increment_playcount()\n")
-#endif
-    // Get the number of selected tracks.
-    if (1 != deadbeef->pl_getselcount()) {
-        return 1;
-    }
-
-    // Since this function is called via the context menu, if there is only
-    // one selected item then it must be the same as the cursor item.
-    int idx = deadbeef->pl_get_cursor(PL_MAIN);
-    DB_playItem_t *track = deadbeef->pl_get_for_idx_and_iter(idx, PL_MAIN);
-
-    if (!deadbeef->pl_is_selected(track)) {
-        deadbeef->pl_item_unref(track);
-        return 1;
-    }
-
-    // Read in required track metadata.
+static int increment_track_playcount(DB_playItem_t *track) {
+    // Get required track metadata.
     const char *track_file_type = NULL;
     const char *track_location = NULL;
     const char *track_tag_type = NULL;
@@ -91,15 +65,16 @@ static int increment_playcount() {
     // Note: API < 1.5 returns 0 for vfs.
     // TODO: Bug? local files start with '/', but that's classified as 'remote'.
     if (strncmp("/", track_location, 1) || !deadbeef->is_local_file(track_location)) {
-        // Can't update play count for remote audio, no access to metadata.
-        // Not technically an error...
+        // Unable to update play count for remote audio, no file access.
         return 0;
     }
 
-    // Get the actual tag structure.
+    // MP3 files can contain ID3v2 or APEv2 tags.
     if (!strcmp(FILE_TYPE_MP3, track_file_type)) {
 
+        // Handle ID3v2 tags.
         if (strstr(track_tag_type, TAG_TYPE_ID3V2)) {
+
             // Update the frame if it exists, otherwise create and set it.
             DB_id3v2_tag_t id3v2 = {0};
             DB_FILE *track_file = deadbeef->fopen(track_location);
@@ -129,22 +104,15 @@ static int increment_playcount() {
         }
     }
 
-    // Remove the reference after we're done making changes.
-    deadbeef->pl_item_unref(track);
     return 0;
 }
 
-// Reset the play count to zero.
+// When song has completed playing we want to increase it's play count.
 // TODO: Handle multiple selected tracks.
 // TODO: Handle selection via search as well. > ddb_playlist_t
-static int reset_playcount() {
-#ifdef DEBUG
-    trace("reset_playcount()\n")
-#endif
-    // Get the number of selected tracks.
-    if (1 != deadbeef->pl_getselcount()) {
-        return 1;
-    }
+// TODO: Handle execution via event call.
+static int increment_playcount() {
+    if (1 != deadbeef->pl_getselcount()) { return 1; }
 
     // Since this function is called via the context menu, if there is only
     // one selected item then it must be the same as the cursor item.
@@ -156,7 +124,14 @@ static int reset_playcount() {
         return 1;
     }
 
-    // Read in required track metadata.
+    int ret = increment_track_playcount(track);
+
+    deadbeef->pl_item_unref(track);
+    return ret;
+}
+
+static int reset_track_playcount(DB_playItem_t *track) {
+    // Get required track metadata.
     const char *track_file_type = NULL;
     const char *track_location = NULL;
     const char *track_metadata_type = NULL;
@@ -166,15 +141,16 @@ static int reset_playcount() {
     // Note: API < 1.5 returns 0 for vfs.
     // TODO: Bug? local files start with '/', but that's classified as 'remote'.
     if (strncmp("/", track_location, 1) || !deadbeef->is_local_file(track_location)) {
-        // Can't update play count for remote audio, no access to metadata.
-        // Not technically an error...
+        // Unable to update play count for remote audio, no file access.
         return 0;
     }
 
-    // Get the actual tag structure.
+    // MP3 files can contain ID3v2 or APEv2 tags.
     if (!strcmp(FILE_TYPE_MP3, track_file_type)) {
 
+        // Handle ID3v2 tags.
         if (strstr(track_metadata_type, TAG_TYPE_ID3V2)) {
+
             // If the frame exists then reset its count, but don't create it.
             DB_id3v2_tag_t id3v2 = {0};
             DB_FILE *track_file = deadbeef->fopen(track_location);
@@ -199,9 +175,30 @@ static int reset_playcount() {
         }
     }
 
-    // Remove the reference after we're done making changes.
-    deadbeef->pl_item_unref(track);
     return 0;
+}
+
+// Reset the play count to zero.
+// TODO: Handle multiple selected tracks.
+// TODO: Handle selection via search as well. > ddb_playlist_t
+static int reset_playcount() {
+    // Find selected tracks.
+    if (1 != deadbeef->pl_getselcount()) { return 1; }
+
+    // Since this function is called via the context menu, if there is only
+    // one selected item then it must be the same as the cursor item.
+    int idx = deadbeef->pl_get_cursor(PL_MAIN);
+    DB_playItem_t *track = deadbeef->pl_get_for_idx_and_iter(idx, PL_MAIN);
+
+    if (!deadbeef->pl_is_selected(track)) {
+        deadbeef->pl_item_unref(track);
+        return 1;
+    }
+
+    int ret = reset_track_playcount(track);
+
+    deadbeef->pl_item_unref(track);
+    return ret;
 }
 
 // TODO: Show play count information in the GUI.
