@@ -8,6 +8,7 @@
 #include "id3v2.h"
 
 #define trace(...) { fprintf(stderr, __VA_ARGS__); }
+#define UNUSED(x) { (void) x; }
 
 static DB_functions_t *deadbeef;
 
@@ -17,7 +18,6 @@ static const char *TAG_TYPE_TAG = ":TAGS";
 
 static const char *FILE_TYPE_MP3 = "MP3";
 static const char *TAG_TYPE_ID3V2 = "ID3v2";
-// TODO: Look into APEv2 support.
 
 /**
  * Get track metadata required for play count updates.
@@ -107,27 +107,6 @@ static int increment_track_playcount(DB_playItem_t *track) {
     return 0;
 }
 
-// TODO: Handle multiple selected tracks.
-// TODO: Handle selection via search as well. > ddb_playlist_t
-static int increment_playcount() {
-    if (1 != deadbeef->pl_getselcount()) { return 1; }
-
-    // Since this function is called via the context menu, if there is only
-    // one selected item then it must be the same as the cursor item.
-    int idx = deadbeef->pl_get_cursor(PL_MAIN);
-    DB_playItem_t *track = deadbeef->pl_get_for_idx_and_iter(idx, PL_MAIN);
-
-    if (!deadbeef->pl_is_selected(track)) {
-        deadbeef->pl_item_unref(track);
-        return 1;
-    }
-
-    int ret = increment_track_playcount(track);
-
-    deadbeef->pl_item_unref(track);
-    return ret;
-}
-
 static int reset_track_playcount(DB_playItem_t *track) {
     // Get required track metadata.
     const char *track_file_type = NULL;
@@ -176,89 +155,69 @@ static int reset_track_playcount(DB_playItem_t *track) {
     return 0;
 }
 
-// Reset the play count to zero.
-// TODO: Handle multiple selected tracks.
-// TODO: Handle selection via search as well. > ddb_playlist_t
-static int reset_playcount() {
-    // Find selected tracks.
-    if (1 != deadbeef->pl_getselcount()) { return 1; }
-
-    // Since this function is called via the context menu, if there is only
-    // one selected item then it must be the same as the cursor item.
-    int idx = deadbeef->pl_get_cursor(PL_MAIN);
-    DB_playItem_t *track = deadbeef->pl_get_for_idx_and_iter(idx, PL_MAIN);
-
-    if (!deadbeef->pl_is_selected(track)) {
-        deadbeef->pl_item_unref(track);
-        return 1;
-    }
-
-    int ret = reset_track_playcount(track);
-
-    deadbeef->pl_item_unref(track);
-    return ret;
-}
-
-// TODO: Show play count information in the GUI.
-
-// When song has completed playing we want to increase it's play count.
-static int handle_songfinished(ddb_event_track_t *context) {
-    return increment_track_playcount(context->track);
-}
-
-// Easy way is increment counter based on song finished playing event.
-static int handle_event(uint32_t id, uintptr_t ctx, uint32_t p1, uint32_t p2) {
-
-    if (DB_EV_SONGFINISHED == id) {
-#ifdef DEBUG
-        if (p1 || p2) {
-            trace("INFO: handle_event p1: %d", p1)
-            trace("INFO: handle_event p2: %d", p2)
-        }
-#endif
-        return handle_songfinished((ddb_event_track_t *) ctx);
-    }
-
-    return 0;
-}
-
-// Add an action in the song context menu,
-// allow the play count to be reset.
-static DB_plugin_action_t reset_playcount_action = {
-        .title = "Reset Playcount",
-        .name = "reset_playcount",
-        .flags = DB_ACTION_SINGLE_TRACK,
-        .callback = reset_playcount,
-        .next = NULL
-};
-
-#ifdef DEBUG
-// Add an action in the song context menu,
-// allow the play count to be incremented.
-static DB_plugin_action_t increment_playcount_action = {
-        .title = "Increment Playcount",
-        .name = "increment_playcount",
-        .flags = DB_ACTION_SINGLE_TRACK,
-        .callback = increment_playcount,
-        .next = &reset_playcount_action
-};
-
-static DB_plugin_action_t *get_actions(DB_playItem_t *it) {
-    return &increment_playcount_action;
-}
-
-#else
-static DB_plugin_action_t* get_actions(DB_playItem_t *it) {
-    return &reset_playcount_action;
-}
-#endif
-
 static int start() {
     // Note: Plugin will be unloaded if start returns -1.
     return 0;
 }
 
 static int stop() {
+    return 0;
+}
+
+static int reset_playcount_callback(
+        struct DB_plugin_action_s *action, void *userdata) {
+    // Note: When called from context menu function seems to be called once per
+    //       track. The 'void *userdata' is a pointer to the track.
+    UNUSED(action)
+    return reset_track_playcount((DB_playItem_t *) userdata);
+}
+
+static int increment_playcount_callback(
+        struct DB_plugin_action_s *action, void *userdata) {
+    UNUSED(action)
+    return increment_track_playcount((DB_playItem_t *) userdata);
+}
+
+// Add action(s) to the song context menu.
+static DB_plugin_action_t reset_playcount_action = {
+        .title = "Reset Playcount",
+        .name = "reset_playcount",
+        .flags = DB_ACTION_SINGLE_TRACK | DB_ACTION_MULTIPLE_TRACKS,
+        .callback = reset_playcount_callback,
+        .next = NULL
+};
+
+#ifdef DEBUG
+static DB_plugin_action_t increment_playcount_action = {
+        .title = "Increment Playcount",
+        .name = "increment_playcount",
+        .flags = DB_ACTION_SINGLE_TRACK | DB_ACTION_MULTIPLE_TRACKS,
+        .callback = increment_playcount_callback,
+        .next = &reset_playcount_action
+};
+
+static DB_plugin_action_t *get_actions(DB_playItem_t *it) {
+    UNUSED(it)
+    return &increment_playcount_action;
+}
+
+#else
+static DB_plugin_action_t* get_actions(DB_playItem_t *it) {
+    UNUSED(it)
+    return &reset_playcount_action;
+}
+#endif
+
+static int handle_event(uint32_t id, uintptr_t ctx, uint32_t p1, uint32_t p2) {
+    UNUSED(p1)
+    UNUSED(p2)
+
+    if (DB_EV_SONGFINISHED == id) {
+        // Increment the play count after a song has finished playing (simple).
+        ddb_event_track_t *event_track = (ddb_event_track_t *) ctx;
+        return increment_track_playcount(event_track->track);
+    }
+
     return 0;
 }
 

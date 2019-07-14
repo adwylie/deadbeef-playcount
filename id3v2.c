@@ -9,7 +9,6 @@
 #define trace(...) { fprintf(stderr, __VA_ARGS__); }
 
 static const char *PCNT_ID = "PCNT";
-// TODO: Look into ID3v2.2 status.
 
 DB_id3v2_frame_t *id3v2_frame_pcnt_create() {
 
