@@ -107,10 +107,8 @@ static int increment_track_playcount(DB_playItem_t *track) {
     return 0;
 }
 
-// When song has completed playing we want to increase it's play count.
 // TODO: Handle multiple selected tracks.
 // TODO: Handle selection via search as well. > ddb_playlist_t
-// TODO: Handle execution via event call.
 static int increment_playcount() {
     if (1 != deadbeef->pl_getselcount()) { return 1; }
 
@@ -203,12 +201,24 @@ static int reset_playcount() {
 
 // TODO: Show play count information in the GUI.
 
-static int start() {
-    // Note: Plugin will be unloaded if start returns -1.
-    return 0;
+// When song has completed playing we want to increase it's play count.
+static int handle_songfinished(ddb_event_track_t *context) {
+    return increment_track_playcount(context->track);
 }
 
-static int stop() {
+// Easy way is increment counter based on song finished playing event.
+static int handle_event(uint32_t id, uintptr_t ctx, uint32_t p1, uint32_t p2) {
+
+    if (DB_EV_SONGFINISHED == id) {
+#ifdef DEBUG
+        if (p1 || p2) {
+            trace("INFO: handle_event p1: %d", p1)
+            trace("INFO: handle_event p2: %d", p2)
+        }
+#endif
+        return handle_songfinished((ddb_event_track_t *) ctx);
+    }
+
     return 0;
 }
 
@@ -243,7 +253,15 @@ static DB_plugin_action_t* get_actions(DB_playItem_t *it) {
 }
 #endif
 
-// TODO: Handle .message DB_EV_SONGFINISHED to increment playcount.
+static int start() {
+    // Note: Plugin will be unloaded if start returns -1.
+    return 0;
+}
+
+static int stop() {
+    return 0;
+}
+
 static DB_misc_t plugin = {
     .plugin = {
         .type = DB_PLUGIN_MISC,
@@ -286,7 +304,7 @@ static DB_misc_t plugin = {
         .disconnect = NULL,
         .exec_cmdline = NULL,
         .get_actions = get_actions,
-        .message = NULL,
+        .message = handle_event,
         .configdialog = NULL
     }
 };
