@@ -44,6 +44,8 @@ static void pl_get_meta_pcnt(DB_playItem_t *track, const char **file_type,
         else if (!strcmp(LOCATION_TAG, key)) { *location = val; }
         else if (!strcmp(TAG_TYPE_TAG, key)) { *tag_type = val; }
 
+        if (*file_type && *location && *tag_type) { break; }
+
         track_meta = track_meta->next;
 #ifdef DEBUG
         trace("Found metadata '%s': '%s'\n", key, val)
