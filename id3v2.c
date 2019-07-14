@@ -11,7 +11,9 @@
 static const char *PCNT_ID = "PCNT";
 
 DB_id3v2_frame_t *id3v2_frame_pcnt_create() {
-
+#ifdef DEBUG
+    trace("Creating a new PCNT frame.\n")
+#endif
     const size_t data_size = sizeof(uint32_t);
     DB_id3v2_frame_t *frame = malloc(sizeof(DB_id3v2_frame_t) + data_size);
 
@@ -27,7 +29,9 @@ DB_id3v2_frame_t *id3v2_frame_pcnt_create() {
 }
 
 uint8_t id3v2_frame_pcnt_inc(DB_id3v2_frame_t *frame) {
-
+#ifdef DEBUG
+    trace("Incrementing PCNT frame count.\n")
+#endif
     if (sizeof(uint32_t) == frame->size) {
         uint32_t count = ntohl(*(uint32_t *) frame->data);
         if (UINT32_MAX == count) { return 1; }
@@ -54,6 +58,9 @@ uint8_t id3v2_frame_pcnt_inc(DB_id3v2_frame_t *frame) {
  * @return  Return non-zero if an error occurred, zero otherwise.
  */
 static uint8_t id3v2_frame_pcnt_set(DB_id3v2_frame_t *frame, uint32_t count) {
+#ifdef DEBUG
+    trace("Setting PCNT frame count to %d.\n", count)
+#endif
     if (sizeof(uint32_t) == frame->size) {
         *((uint32_t *) frame->data) = htonl(count);
 #ifdef DEBUG
@@ -91,6 +98,9 @@ DB_id3v2_frame_t *id3v2_tag_frame_get_pcnt(DB_id3v2_tag_t *tag) {
         current = current->next;
     }
 
+#ifdef DEBUG
+    if (!current) { trace("PCNT frame not found.\n") }
+#endif
     return current;
 }
 

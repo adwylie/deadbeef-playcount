@@ -32,24 +32,24 @@ static const char *TAG_TYPE_ID3V2 = "ID3v2";
  */
 static void pl_get_meta_pcnt(DB_playItem_t *track, const char **file_type,
                              const char **location, const char **tag_type) {
-
     deadbeef->pl_lock();
     DB_metaInfo_t *track_meta = deadbeef->pl_get_metadata_head(track);
 
     while (track_meta) {
         const char *key = track_meta->key;
         const char *val = track_meta->value;
+#ifdef DEBUG
+        trace("Found metadata '%s': '%s'\n", key, val)
+#endif
 
         if (!strcmp(FILE_TYPE_TAG, key)) { *file_type = val; }
         else if (!strcmp(LOCATION_TAG, key)) { *location = val; }
         else if (!strcmp(TAG_TYPE_TAG, key)) { *tag_type = val; }
 
+#ifndef DEBUG
         if (*file_type && *location && *tag_type) { break; }
-
-        track_meta = track_meta->next;
-#ifdef DEBUG
-        trace("Found metadata '%s': '%s'\n", key, val)
 #endif
+        track_meta = track_meta->next;
     }
     deadbeef->pl_unlock();
 }
@@ -83,21 +83,18 @@ static int increment_track_playcount(DB_playItem_t *track) {
             DB_id3v2_frame_t *pcnt = id3v2_tag_frame_get_pcnt(&id3v2);
 
             if (!pcnt) {
-                trace("Didn't find PCNT frame, creating & incrementing count.\n")
                 pcnt = id3v2_frame_pcnt_create();
                 id3v2_tag_frame_add(&id3v2, pcnt);
             }
-
-            trace("Incrementing PCNT frame count.\n")
             id3v2_frame_pcnt_inc(pcnt);
 
-            trace("Writing file.\n")
+            // Save the changes.
             FILE *actual_file = fopen(track_location, "r+");
             fseek(actual_file, 0, SEEK_SET);
             deadbeef->junk_id3v2_write(actual_file, &id3v2);
             fclose(actual_file);
 
-            trace("Freeing resources.\n")
+            // Clean up resources.
             free(id3v2_tag_frame_rem_pcnt(&id3v2));
             deadbeef->junk_id3v2_free(&id3v2);
             deadbeef->fclose(track_file);
@@ -136,17 +133,16 @@ static int reset_track_playcount(DB_playItem_t *track) {
             DB_id3v2_frame_t *pcnt = id3v2_tag_frame_get_pcnt(&id3v2);
 
             if (pcnt) {
-                trace("Found PCNT frame, resetting count.\n")
                 id3v2_frame_pcnt_reset(pcnt);
 
-                trace("Writing file.\n")
+                // Save the changes.
                 FILE *actual_file = fopen(track_location, "r+");
                 fseek(actual_file, 0, SEEK_SET);
                 deadbeef->junk_id3v2_write(actual_file, &id3v2);
                 fclose(actual_file);
             }
 
-            trace("Freeing resources.\n")
+            // Clean up resources.
             deadbeef->junk_id3v2_free(&id3v2);
             deadbeef->fclose(track_file);
         }
