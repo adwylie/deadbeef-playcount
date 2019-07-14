@@ -81,9 +81,11 @@ static int increment_track_playcount(DB_playItem_t *track) {
             deadbeef->junk_id3v2_read_full(track, &id3v2, track_file);
 
             DB_id3v2_frame_t *pcnt = id3v2_tag_frame_get_pcnt(&id3v2);
+            uint8_t created = 0;
 
             if (!pcnt) {
                 pcnt = id3v2_frame_pcnt_create();
+                created = 1;
                 id3v2_tag_frame_add(&id3v2, pcnt);
             }
             id3v2_frame_pcnt_inc(pcnt);
@@ -95,7 +97,8 @@ static int increment_track_playcount(DB_playItem_t *track) {
             fclose(actual_file);
 
             // Clean up resources.
-            free(id3v2_tag_frame_rem_pcnt(&id3v2));
+            DB_id3v2_frame_t *removed = id3v2_tag_frame_rem_pcnt(&id3v2);
+            if (created) { free(removed); }
             deadbeef->junk_id3v2_free(&id3v2);
             deadbeef->fclose(track_file);
         }
