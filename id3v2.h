@@ -10,6 +10,9 @@
  * ID3v2 specification uses Big Endian (network byte order) for storage of
  * multi-byte data, whereas host machine may not.
  *
+ * Also, there is no fixed order of a frame's appearance in the tag. So we'll
+ * just throw the PCNT frame at the end of the tag if we need to create it.
+ *
  * Format is the same for both ID3v2.3 and 2.4. Documentation available at:
  *   - http://id3.org/id3v2.3.0
  *   - http://id3.org/id3v2.4.0-structure
