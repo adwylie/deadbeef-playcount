@@ -18,27 +18,33 @@
  *   - http://id3.org/id3v2.4.0-structure
  *   - http://id3.org/id3v2.4.0-frames
  *
- * @return  The created frame.
+ * @return  A pointer to the created frame.
  */
 DB_id3v2_frame_t *id3v2_frame_pcnt_create(void);
 
 /**
  * Increment the play count value of an existing PCNT frame.
  *
- * Do it the easy way, don't care about values larger than 32-bits (uint32_t).
+ * A new frame will be allocated when the play count value is too large to be
+ * stored in the current frame. It is up to the caller to test if this has
+ * occurred and act accordingly.
  *
  * @param frame  A pointer to the PCNT frame.
- * @return  Return non-zero if an error occurred, zero otherwise.
+ * @return  A pointer to the updated frame.
  */
-uint8_t id3v2_frame_pcnt_inc(DB_id3v2_frame_t *pcnt_frame);
+DB_id3v2_frame_t *id3v2_frame_pcnt_inc(DB_id3v2_frame_t *pcnt_frame);
 
 /**
  * Reset the play count value of an existing PCNT frame.
  *
+ * A new frame will be allocated when the play count value can be stored in a
+ * smaller frame. It is up to the caller to test if this has occurred and act
+ * accordingly.
+ *
  * @param frame  A pointer to the PCNT frame.
- * @return  Return non-zero if an error occurred, zero otherwise.
+ * @return  A pointer to the updated frame.
  */
-uint8_t id3v2_frame_pcnt_reset(DB_id3v2_frame_t *pcnt_frame);
+DB_id3v2_frame_t *id3v2_frame_pcnt_reset(DB_id3v2_frame_t *pcnt_frame);
 
 /**
  * Add a frame to an ID3v2 tag.

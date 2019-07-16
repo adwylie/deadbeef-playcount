@@ -88,7 +88,18 @@ static int increment_track_playcount(DB_playItem_t *track) {
                 created = 1;
                 id3v2_tag_frame_add(&id3v2, pcnt);
             }
-            id3v2_frame_pcnt_inc(pcnt);
+
+            DB_id3v2_frame_t *updated = id3v2_frame_pcnt_inc(pcnt);
+            if (updated != pcnt) {
+                // A new frame was created on count increment.
+                // Remove the old one, add the new one.
+                // Should only be one PCNT frame, so: removed == pcnt.
+                DB_id3v2_frame_t *removed = id3v2_tag_frame_rem_pcnt(&id3v2);
+                if (created) { free(removed); }
+
+                created = 1;
+                id3v2_tag_frame_add(&id3v2, updated);
+            }
 
             // Save the changes.
             FILE *actual_file = fopen(track_location, "r+");
@@ -97,8 +108,7 @@ static int increment_track_playcount(DB_playItem_t *track) {
             fclose(actual_file);
 
             // Clean up resources.
-            DB_id3v2_frame_t *removed = id3v2_tag_frame_rem_pcnt(&id3v2);
-            if (created) { free(removed); }
+            if (created) { free(id3v2_tag_frame_rem_pcnt(&id3v2)); }
             deadbeef->junk_id3v2_free(&id3v2);
             deadbeef->fclose(track_file);
         }
@@ -134,9 +144,20 @@ static int reset_track_playcount(DB_playItem_t *track) {
             deadbeef->junk_id3v2_read_full(track, &id3v2, track_file);
 
             DB_id3v2_frame_t *pcnt = id3v2_tag_frame_get_pcnt(&id3v2);
+            uint8_t created = 0;
 
             if (pcnt) {
-                id3v2_frame_pcnt_reset(pcnt);
+                DB_id3v2_frame_t *updated = id3v2_frame_pcnt_reset(pcnt);
+
+                if (updated != pcnt) {
+                    // A new frame was created on count reset.
+                    // Remove the old one, add the new one.
+                    // Should only be one PCNT frame, so: removed == pcnt.
+                    id3v2_tag_frame_rem_pcnt(&id3v2);
+
+                    created = 1;
+                    id3v2_tag_frame_add(&id3v2, updated);
+                }
 
                 // Save the changes.
                 FILE *actual_file = fopen(track_location, "r+");
@@ -146,6 +167,7 @@ static int reset_track_playcount(DB_playItem_t *track) {
             }
 
             // Clean up resources.
+            if (created) { free(id3v2_tag_frame_rem_pcnt(&id3v2)); }
             deadbeef->junk_id3v2_free(&id3v2);
             deadbeef->fclose(track_file);
         }

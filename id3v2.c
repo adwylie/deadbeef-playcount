@@ -1,4 +1,4 @@
-#include <arpa/inet.h>
+#include <limits.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,13 +8,19 @@
 
 #define trace(...) { fprintf(stderr, __VA_ARGS__); }
 
+static const size_t DEFAULT_DATA_SIZE = sizeof(uint32_t);
 static const char *PCNT_ID = "PCNT";
 
-DB_id3v2_frame_t *id3v2_frame_pcnt_create() {
+/**
+ * Create/allocate a new PCNT frame object on the heap.
+ *
+ * @param data_size  The counter data size in bytes.
+ * @return  A pointer to the created frame.
+ */
+static DB_id3v2_frame_t *id3v2_frame_pcnt_create_full(size_t data_size) {
 #ifdef DEBUG
     trace("Creating a new PCNT frame.\n")
 #endif
-    const size_t data_size = sizeof(uint32_t);
     DB_id3v2_frame_t *frame = malloc(sizeof(DB_id3v2_frame_t) + data_size);
 
     if (frame) {
@@ -28,24 +34,61 @@ DB_id3v2_frame_t *id3v2_frame_pcnt_create() {
     return frame;
 }
 
-uint8_t id3v2_frame_pcnt_inc(DB_id3v2_frame_t *frame) {
-#ifdef DEBUG
-    trace("Incrementing PCNT frame count.\n")
-#endif
-    if (sizeof(uint32_t) == frame->size) {
-        uint32_t count = ntohl(*(uint32_t *) frame->data);
-        if (UINT32_MAX == count) { return 1; }
-        *((uint32_t *) frame->data) = htonl(count + 1);
-#ifdef DEBUG
-        trace("Read count of %d, wrote count of %d.\n", count, count + 1)
-        uint32_t new_count = ntohl(*(uint32_t *) frame->data);
-        trace("Actual new count is %d.\n", new_count)
-#endif
-    } else {
-        return 1;
+DB_id3v2_frame_t *id3v2_frame_pcnt_create() {
+    return id3v2_frame_pcnt_create_full(DEFAULT_DATA_SIZE);
+}
+
+DB_id3v2_frame_t *id3v2_frame_pcnt_inc(DB_id3v2_frame_t *frame) {
+    // Data is stored in big endian (network byte order). We'll modify it in
+    // place in memory instead of converting to host bye order and back.
+    // Scan from the right-most bit to find the first unset bit.
+    uint8_t position = 0;
+    uint8_t mask = 1;
+    uint8_t *window = frame->data + frame->size - 1;
+
+    while (*window & mask) {
+        mask <<= 1u;
+        position++;
+
+        // Reset the mask & window when we would start reading the next byte.
+        if (!(position % (sizeof(*window) * CHAR_BIT))) {
+            mask = 1;
+            window -= 1;
+        }
+
+        // Determine if we've overrun the data (reading into frame->flags).
+        // Reallocate adding an additional byte for play count value storage.
+        // Then set the play count. Right-most bit in first byte should be set,
+        // it's the 'new' byte that was just added.
+        if (window < frame->data) {
+            DB_id3v2_frame_t *f = id3v2_frame_pcnt_create_full(frame->size + 1);
+            if (f) { (*((uint8_t *) f->data)) = 1; }
+            return f;
+        }
     }
 
-    return 0;
+    // Set the first unset bit.
+    *window |= mask;
+
+    // Clear all bits to the right.
+    uint8_t clear_position = 0;
+    mask = 1u;
+    window = frame->data + frame->size - 1;
+
+    while (clear_position < position) {
+        *window &= ~mask;
+
+        mask <<= 1u;
+        clear_position++;
+
+        // Reset the mask & window when we would start reading the next byte.
+        if (!(clear_position % (sizeof(*window) * CHAR_BIT))) {
+            mask = 1;
+            window -= 1;
+        }
+    }
+
+    return frame;
 }
 
 /**
@@ -55,27 +98,52 @@ uint8_t id3v2_frame_pcnt_inc(DB_id3v2_frame_t *frame) {
  *
  * @param frame  A pointer to the PCNT frame.
  * @param count  The play count to set.
- * @return  Return non-zero if an error occurred, zero otherwise.
+ * @return  A pointer to the updated frame.
  */
-static uint8_t id3v2_frame_pcnt_set(DB_id3v2_frame_t *frame, uint32_t count) {
-#ifdef DEBUG
-    trace("Setting PCNT frame count to %d.\n", count)
-#endif
-    if (sizeof(uint32_t) == frame->size) {
-        *((uint32_t *) frame->data) = htonl(count);
-#ifdef DEBUG
-        trace("Wrote count of %d.\n", count)
-        uint32_t new_count = ntohl(*(uint32_t *) frame->data);
-        trace("Actual new count is %d.\n", new_count)
-#endif
-        return 0;
+// Endianness refers to how data is stored in memory, however when operating
+// on values in the processor's register they're represented in big endian.
+static DB_id3v2_frame_t *id3v2_frame_pcnt_set(DB_id3v2_frame_t *frame, uintmax_t count) {
 
-    } else {
-        return 1;
+    // Find the minimum number of bytes needed to store the count value.
+    // Move from the LSB to MSB and identify where we see the last set bit.
+    // Then round this bit position up to the nearest number of bytes.
+    uint8_t bit_width = 0;
+    uintmax_t mask = 1u;
+
+    for (uint16_t i = 1; i <= sizeof(uintmax_t) * CHAR_BIT; i++) {
+        if (count & mask) { bit_width = i; }
+        mask <<= 1u;
     }
+
+    uint8_t byte_width = bit_width / CHAR_BIT;
+    if (bit_width % CHAR_BIT) { byte_width++; }
+    if (byte_width < DEFAULT_DATA_SIZE) { byte_width = DEFAULT_DATA_SIZE; }
+
+    // Compare widths of count and current frame->size.
+    DB_id3v2_frame_t *ret = frame;
+
+    if (frame->size != byte_width) {
+        // If different create a new frame with a specific size.
+        ret = id3v2_frame_pcnt_create_full(byte_width);
+    }
+
+    // Working with memory so consider endianness of the host. Note that we
+    // also want to store the value in network byte order (big endian).
+    for (uint8_t i = 0; i < byte_width; i++) {
+#if BYTE_ORDER == BIG_ENDIAN
+        uint8_t j = i;
+        uint8_t offset = sizeof(uintmax_t) - byte_width;
+#elif BYTE_ORDER == LITTLE_ENDIAN
+        uint8_t j = byte_width - i - 1;
+        uint8_t offset = 0;
+#endif
+        *(((uint8_t *) ret->data) + j) = *(((uint8_t *) (&count)) + offset + i);
+    }
+
+    return ret;
 }
 
-uint8_t id3v2_frame_pcnt_reset(DB_id3v2_frame_t *frame) {
+DB_id3v2_frame_t *id3v2_frame_pcnt_reset(DB_id3v2_frame_t *frame) {
     return id3v2_frame_pcnt_set(frame, 0);
 }
 
