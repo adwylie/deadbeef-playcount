@@ -35,16 +35,13 @@ DB_id3v2_frame_t *id3v2_frame_pcnt_create(void);
 DB_id3v2_frame_t *id3v2_frame_pcnt_inc(DB_id3v2_frame_t *pcnt_frame);
 
 /**
- * Reset the play count value of an existing PCNT frame.
- *
- * A new frame will be allocated when the play count value can be stored in a
- * smaller frame. It is up to the caller to test if this has occurred and act
- * accordingly.
+ * Set the play count value of an existing PCNT frame.
  *
  * @param frame  A pointer to the PCNT frame.
+ * @param count  The play count to set.
  * @return  A pointer to the updated frame.
  */
-DB_id3v2_frame_t *id3v2_frame_pcnt_reset(DB_id3v2_frame_t *pcnt_frame);
+DB_id3v2_frame_t *id3v2_frame_pcnt_set(DB_id3v2_frame_t *pcnt_frame, uintmax_t count);
 
 /**
  * Add a frame to an ID3v2 tag.

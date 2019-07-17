@@ -91,18 +91,9 @@ DB_id3v2_frame_t *id3v2_frame_pcnt_inc(DB_id3v2_frame_t *frame) {
     return frame;
 }
 
-/**
- * Set the play count value of an existing PCNT frame.
- *
- * Should only be called directly for debugging purposes.
- *
- * @param frame  A pointer to the PCNT frame.
- * @param count  The play count to set.
- * @return  A pointer to the updated frame.
- */
 // Endianness refers to how data is stored in memory, however when operating
 // on values in the processor's register they're represented in big endian.
-static DB_id3v2_frame_t *id3v2_frame_pcnt_set(DB_id3v2_frame_t *frame, uintmax_t count) {
+DB_id3v2_frame_t *id3v2_frame_pcnt_set(DB_id3v2_frame_t *frame, uintmax_t count) {
 
     // Find the minimum number of bytes needed to store the count value.
     // Move from the LSB to MSB and identify where we see the last set bit.
@@ -141,10 +132,6 @@ static DB_id3v2_frame_t *id3v2_frame_pcnt_set(DB_id3v2_frame_t *frame, uintmax_t
     }
 
     return ret;
-}
-
-DB_id3v2_frame_t *id3v2_frame_pcnt_reset(DB_id3v2_frame_t *frame) {
-    return id3v2_frame_pcnt_set(frame, 0);
 }
 
 void id3v2_tag_frame_add(DB_id3v2_tag_t *tag, DB_id3v2_frame_t *frame) {

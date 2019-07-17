@@ -147,7 +147,7 @@ static int reset_track_playcount(DB_playItem_t *track) {
             uint8_t created = 0;
 
             if (pcnt) {
-                DB_id3v2_frame_t *updated = id3v2_frame_pcnt_reset(pcnt);
+                DB_id3v2_frame_t *updated = id3v2_frame_pcnt_set(pcnt, 0);
 
                 if (updated != pcnt) {
                     // A new frame was created on count reset.
