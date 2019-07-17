@@ -3,9 +3,9 @@ project(playcount LANGUAGES C VERSION 0.1 DESCRIPTION "DeaDBeeF Playcount Plugin
 
 find_file(API deadbeef/deadbeef.h)
 if (NOT API)
-    message(FATAL_ERROR "DeaDBeeF API MISSING")
+    message(FATAL_ERROR "DeaDBeeF API: MISSING")
 else()
-    message(STATUS "DeaDBeeF API present")
+    message(STATUS "DeaDBeeF API: present")
     get_filename_component(API_DIR ${API} DIRECTORY)
     include_directories(${API_DIR})
 endif()
@@ -23,11 +23,6 @@ target_compile_options(playcount PRIVATE
 set_target_properties(playcount PROPERTIES PREFIX "")
 
 # Install the library in the deadbeef lib folder.
-set(ARCH_DEADBEEF_LIBDIR "/usr/lib/deadbeef")
-
-if (EXISTS ${ARCH_DEADBEEF_LIBDIR})
-    message(STATUS "DeaDBeef lib directory found")
-    install(TARGETS playcount LIBRARY DESTINATION ${ARCH_DEADBEEF_LIBDIR})
-else()
-    message(FATAL_ERROR "DeaDBeeF lib directory UNKNOWN")
-endif()
+set(DEADBEEF_LIBDIR "~/.local/lib/deadbeef/")
+message(STATUS "Install path: \"${DEADBEEF_LIBDIR}\"")
+install(TARGETS playcount LIBRARY DESTINATION ${DEADBEEF_LIBDIR})

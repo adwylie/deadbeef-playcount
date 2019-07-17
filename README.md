@@ -20,5 +20,5 @@ cmake -DCMAKE_BUILD_TYPE=Release ..
 make
 
 # and on select platforms..
-sudo make install
+make install
 ```
