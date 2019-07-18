@@ -72,6 +72,8 @@ static uintmax_t get_track_tag_playcount(DB_playItem_t *track) {
         return id3v2_pcnt_frame_get_count(pcnt);
     }
 
+    deadbeef->junk_id3v2_free(&id3v2);
+    deadbeef->fclose(track_file);
     return 0;
 }
 
