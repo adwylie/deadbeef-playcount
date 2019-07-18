@@ -35,6 +35,14 @@ DB_id3v2_frame_t *id3v2_create_pcnt_frame(void);
 DB_id3v2_frame_t *id3v2_pcnt_frame_inc_count(DB_id3v2_frame_t *frame);
 
 /**
+ * Get the play count value of an existing PCNT frame.
+ *
+ * @param frame  A pointer to the PCNT frame.
+ * @return  The play count.
+ */
+uintmax_t id3v2_pcnt_frame_get_count(DB_id3v2_frame_t *frame);
+
+/**
  * Set the play count value of an existing PCNT frame.
  *
  * @param frame  A pointer to the PCNT frame.

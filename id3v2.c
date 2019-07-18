@@ -91,6 +91,30 @@ DB_id3v2_frame_t *id3v2_pcnt_frame_inc_count(DB_id3v2_frame_t *frame) {
     return frame;
 }
 
+uintmax_t id3v2_pcnt_frame_get_count(DB_id3v2_frame_t *frame) {
+
+    // Check if we can actually display the play count value.
+    if (frame->size > sizeof(uintmax_t)) { return UINTMAX_MAX; }
+
+    uintmax_t ret = 0;
+    uint32_t byte_width = frame->size;
+
+    // Working with memory so consider endianness of the host. Note that we
+    // are also converting the value from network byte order (big endian).
+    for (uint32_t i = 0; i < byte_width; i++) {
+#if BYTE_ORDER == BIG_ENDIAN
+        uint32_t j = i;
+        uint32_t offset = sizeof(uintmax_t) - byte_width;
+#elif BYTE_ORDER == LITTLE_ENDIAN
+        uint32_t j = byte_width - i - 1;
+        uint32_t offset = 0;
+#endif
+        *(((uint8_t *) (&ret)) + offset + i) = *(((uint8_t *) frame->data) + j);
+    }
+
+    return ret;
+}
+
 // Endianness refers to how data is stored in memory, however when operating
 // on values in the processor's register they're represented in big endian.
 DB_id3v2_frame_t *id3v2_pcnt_frame_set_count(
@@ -120,7 +144,7 @@ DB_id3v2_frame_t *id3v2_pcnt_frame_set_count(
     }
 
     // Working with memory so consider endianness of the host. Note that we
-    // also want to store the value in network byte order (big endian).
+    // are also converting the value to network byte order (big endian).
     for (uint8_t i = 0; i < byte_width; i++) {
 #if BYTE_ORDER == BIG_ENDIAN
         uint8_t j = i;

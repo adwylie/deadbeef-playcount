@@ -1,3 +1,4 @@
+#include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -46,7 +47,39 @@ static uint8_t is_track_tag_supported(DB_playItem_t *track) {
     return 0;
 }
 
-static int increment_track_playcount(DB_playItem_t *track) {
+/**
+ * Read the play count from the track's tag.
+ *
+ * @param track  A pointer to the track.
+ * @return  The currently set play count value.
+ */
+static uintmax_t get_track_tag_playcount(DB_playItem_t *track) {
+
+    deadbeef->pl_lock();
+    const char *track_location = deadbeef->pl_find_meta(track, LOCATION_TAG);
+    deadbeef->pl_unlock();
+
+    // Note: API < 1.5 returns 0 for vfs.
+    // TODO: Bug? local files start with '/', but that's classified as 'remote'.
+    if (strncmp("/", track_location, 1) || !deadbeef->is_local_file(track_location)) {
+        // Unable to update play count for remote audio, no file access.
+        return 0;
+    }
+
+    // If the frame exists read its count.
+    DB_id3v2_tag_t id3v2 = {0};
+    DB_FILE *track_file = deadbeef->fopen(track_location);
+    deadbeef->junk_id3v2_read_full(track, &id3v2, track_file);
+
+    DB_id3v2_frame_t *pcnt = id3v2_tag_get_pcnt_frame(&id3v2);
+    if (pcnt) {
+        return id3v2_pcnt_frame_get_count(pcnt);
+    }
+
+    return 0;
+}
+
+static uint8_t increment_track_tag_playcount(DB_playItem_t *track) {
 
     deadbeef->pl_lock();
     const char *track_location = deadbeef->pl_find_meta(track, LOCATION_TAG);
@@ -175,7 +208,7 @@ static int reset_playcount_callback(
 static int increment_playcount_callback(
         struct DB_plugin_action_s *action, void *userdata) {
     UNUSED(action)
-    return increment_track_playcount((DB_playItem_t *) userdata);
+    return increment_track_tag_playcount((DB_playItem_t *) userdata);
 }
 
 // Add action(s) to the song context menu.
@@ -195,13 +228,35 @@ static DB_plugin_action_t increment_playcount_action = {
         .callback = increment_playcount_callback,
         .next = &reset_playcount_action
 };
+
+static int get_playcount_callback(
+        struct DB_plugin_action_s *action, void *userdata) {
+    UNUSED(action)
+
+    deadbeef->pl_lock();
+    const char *title = deadbeef->pl_find_meta((DB_playItem_t *) userdata, "title");
+    deadbeef->pl_unlock();
+
+    trace("%s: %" PRIuMAX "\n",
+            title, get_track_tag_playcount((DB_playItem_t *) userdata))
+
+    return 0;
+}
+
+static DB_plugin_action_t get_playcount_action = {
+        .title = "Get Playcount",
+        .name = "get_playcount",
+        .flags = DB_ACTION_SINGLE_TRACK | DB_ACTION_MULTIPLE_TRACKS,
+        .callback = get_playcount_callback,
+        .next = &increment_playcount_action
+};
 #endif
 
 static DB_plugin_action_t *get_actions(DB_playItem_t *it) {
 
     if (is_track_tag_supported(it)) {
 #ifdef DEBUG
-        return &increment_playcount_action;
+        return &get_playcount_action;
 #else
         return &reset_playcount_action;
 #endif
@@ -218,7 +273,7 @@ static int handle_event(uint32_t id, uintptr_t ctx, uint32_t p1, uint32_t p2) {
     if (DB_EV_SONGFINISHED == id) {
         // Increment the play count after a song has finished playing (simple).
         ddb_event_track_t *event_track = (ddb_event_track_t *) ctx;
-        return increment_track_playcount(event_track->track);
+        return increment_track_tag_playcount(event_track->track);
     }
 
     return 0;
