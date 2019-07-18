@@ -12,118 +12,45 @@
 
 static DB_functions_t *deadbeef;
 
-static const char *FILE_TYPE_TAG = ":FILETYPE";
 static const char *LOCATION_TAG = ":URI";
 static const char *TAG_TYPE_TAG = ":TAGS";
 
-static const char *FILE_TYPE_MP3 = "MP3";
-static const char *TAG_TYPE_ID3V2 = "ID3v2";
+static const char *TAG_TYPE_ID3V2_3 = "ID3v2.3";
+static const char *TAG_TYPE_ID3V2_4 = "ID3v2.4";
 
 /**
- * Get track metadata required for play count updates.
+ * Return whether a track is supported by the plugin (wrt/ tags).
  *
- * We're assuming that the given track won't be null, and that it will have
- * metadata. We leave it up to the caller to check returned values.
+ * Only ID3v2 (2.3, 2.4) tags are supported.
  *
- * @param track  A pointer to the track to get metadata information from.
- * @param file_type  A pointer to the file type string.
- * @param location  A pointer to the file location string.
- * @param tag_type  A pointer to the tag type string.
+ * - ID3v1 doesn't have a play count frame/property.
+ * - ID3v2.2 is obsolete, won't support.
+ * - APEv1 & APEv2 don't have play count frames/properties.
+ *
+ * @param track  A pointer to the track to check support for.
+ * @return A positive integer if the track is supported, zero otherwise.
  */
-static void pl_get_meta_pcnt(DB_playItem_t *track, const char **file_type,
-                             const char **location, const char **tag_type) {
-    deadbeef->pl_lock();
-    DB_metaInfo_t *track_meta = deadbeef->pl_get_metadata_head(track);
+static uint8_t track_tag_supported(DB_playItem_t *track) {
 
-    while (track_meta) {
-        const char *key = track_meta->key;
-        const char *val = track_meta->value;
-#ifdef DEBUG
-        trace("Found metadata '%s': '%s'\n", key, val)
-#endif
+    if (track) {
+        deadbeef->pl_lock();
+        const char *track_tag_type = deadbeef->pl_find_meta(track, TAG_TYPE_TAG);
+        deadbeef->pl_unlock();
 
-        if (!strcmp(FILE_TYPE_TAG, key)) { *file_type = val; }
-        else if (!strcmp(LOCATION_TAG, key)) { *location = val; }
-        else if (!strcmp(TAG_TYPE_TAG, key)) { *tag_type = val; }
-
-#ifndef DEBUG
-        if (*file_type && *location && *tag_type) { break; }
-#endif
-        track_meta = track_meta->next;
-    }
-    deadbeef->pl_unlock();
-}
-
-static int increment_track_playcount(DB_playItem_t *track) {
-    // Get required track metadata.
-    const char *track_file_type = NULL;
-    const char *track_location = NULL;
-    const char *track_tag_type = NULL;
-
-    pl_get_meta_pcnt(track, &track_file_type, &track_location, &track_tag_type);
-
-    // Note: API < 1.5 returns 0 for vfs.
-    // TODO: Bug? local files start with '/', but that's classified as 'remote'.
-    if (strncmp("/", track_location, 1) || !deadbeef->is_local_file(track_location)) {
-        // Unable to update play count for remote audio, no file access.
-        return 0;
-    }
-
-    // MP3 files can contain ID3v2 or APEv2 tags.
-    if (!strcmp(FILE_TYPE_MP3, track_file_type)) {
-
-        // Handle ID3v2 tags.
-        if (strstr(track_tag_type, TAG_TYPE_ID3V2)) {
-
-            // Update the frame if it exists, otherwise create and set it.
-            DB_id3v2_tag_t id3v2 = {0};
-            DB_FILE *track_file = deadbeef->fopen(track_location);
-            deadbeef->junk_id3v2_read_full(track, &id3v2, track_file);
-
-            DB_id3v2_frame_t *pcnt = id3v2_tag_frame_get_pcnt(&id3v2);
-            uint8_t created = 0;
-
-            if (!pcnt) {
-                pcnt = id3v2_frame_pcnt_create();
-                created = 1;
-                id3v2_tag_frame_add(&id3v2, pcnt);
-            }
-
-            DB_id3v2_frame_t *updated = id3v2_frame_pcnt_inc(pcnt);
-            if (updated != pcnt) {
-                // A new frame was created on count increment.
-                // Remove the old one, add the new one.
-                // Should only be one PCNT frame, so: removed == pcnt.
-                DB_id3v2_frame_t *removed = id3v2_tag_frame_rem_pcnt(&id3v2);
-                if (created) { free(removed); }
-
-                created = 1;
-                id3v2_tag_frame_add(&id3v2, updated);
-            }
-
-            // Save the changes.
-            FILE *actual_file = fopen(track_location, "r+");
-            fseek(actual_file, 0, SEEK_SET);
-            deadbeef->junk_id3v2_write(actual_file, &id3v2);
-            fclose(actual_file);
-
-            // Clean up resources.
-            if (created) { free(id3v2_tag_frame_rem_pcnt(&id3v2)); }
-            deadbeef->junk_id3v2_free(&id3v2);
-            deadbeef->fclose(track_file);
+        if (!strstr(track_tag_type, TAG_TYPE_ID3V2_3)
+                || !strstr(track_tag_type, TAG_TYPE_ID3V2_4)) {
+            return 1;
         }
     }
 
     return 0;
 }
 
-static int reset_track_playcount(DB_playItem_t *track) {
-    // Get required track metadata.
-    const char *track_file_type = NULL;
-    const char *track_location = NULL;
-    const char *track_tag_type = NULL;
+static int increment_track_playcount(DB_playItem_t *track) {
 
-    pl_get_meta_pcnt(track, &track_file_type, &track_location, &track_tag_type);
+    deadbeef->pl_lock();
+    const char *track_location = deadbeef->pl_find_meta(track, LOCATION_TAG);
+    deadbeef->pl_unlock();
 
     // Note: API < 1.5 returns 0 for vfs.
     // TODO: Bug? local files start with '/', but that's classified as 'remote'.
@@ -132,46 +59,91 @@ static int reset_track_playcount(DB_playItem_t *track) {
         return 0;
     }
 
-    // MP3 files can contain ID3v2 or APEv2 tags.
-    if (!strcmp(FILE_TYPE_MP3, track_file_type)) {
+    // Update the frame if it exists, otherwise create and set it.
+    DB_id3v2_tag_t id3v2 = {0};
+    DB_FILE *track_file = deadbeef->fopen(track_location);
+    deadbeef->junk_id3v2_read_full(track, &id3v2, track_file);
 
-        // Handle ID3v2 tags.
-        if (strstr(track_tag_type, TAG_TYPE_ID3V2)) {
+    DB_id3v2_frame_t *pcnt = id3v2_tag_frame_get_pcnt(&id3v2);
+    uint8_t created = 0;
 
-            // If the frame exists then reset its count, but don't create it.
-            DB_id3v2_tag_t id3v2 = {0};
-            DB_FILE *track_file = deadbeef->fopen(track_location);
-            deadbeef->junk_id3v2_read_full(track, &id3v2, track_file);
-
-            DB_id3v2_frame_t *pcnt = id3v2_tag_frame_get_pcnt(&id3v2);
-            uint8_t created = 0;
-
-            if (pcnt) {
-                DB_id3v2_frame_t *updated = id3v2_frame_pcnt_set(pcnt, 0);
-
-                if (updated != pcnt) {
-                    // A new frame was created on count reset.
-                    // Remove the old one, add the new one.
-                    // Should only be one PCNT frame, so: removed == pcnt.
-                    id3v2_tag_frame_rem_pcnt(&id3v2);
-
-                    created = 1;
-                    id3v2_tag_frame_add(&id3v2, updated);
-                }
-
-                // Save the changes.
-                FILE *actual_file = fopen(track_location, "r+");
-                fseek(actual_file, 0, SEEK_SET);
-                deadbeef->junk_id3v2_write(actual_file, &id3v2);
-                fclose(actual_file);
-            }
-
-            // Clean up resources.
-            if (created) { free(id3v2_tag_frame_rem_pcnt(&id3v2)); }
-            deadbeef->junk_id3v2_free(&id3v2);
-            deadbeef->fclose(track_file);
-        }
+    if (!pcnt) {
+        pcnt = id3v2_frame_pcnt_create();
+        created = 1;
+        id3v2_tag_frame_add(&id3v2, pcnt);
     }
+
+    DB_id3v2_frame_t *updated = id3v2_frame_pcnt_inc(pcnt);
+    if (updated != pcnt) {
+        // A new frame was created on count increment.
+        // Remove the old one, add the new one.
+        // Should only be one PCNT frame, so: removed == pcnt.
+        DB_id3v2_frame_t *removed = id3v2_tag_frame_rem_pcnt(&id3v2);
+        if (created) { free(removed); }
+
+        created = 1;
+        id3v2_tag_frame_add(&id3v2, updated);
+    }
+
+    // Save the changes.
+    FILE *actual_file = fopen(track_location, "r+");
+    fseek(actual_file, 0, SEEK_SET);
+    deadbeef->junk_id3v2_write(actual_file, &id3v2);
+    fclose(actual_file);
+
+    // Clean up resources.
+    if (created) { free(id3v2_tag_frame_rem_pcnt(&id3v2)); }
+    deadbeef->junk_id3v2_free(&id3v2);
+    deadbeef->fclose(track_file);
+
+    return 0;
+}
+
+static int reset_track_playcount(DB_playItem_t *track) {
+
+    deadbeef->pl_lock();
+    const char *track_location = deadbeef->pl_find_meta(track, LOCATION_TAG);
+    deadbeef->pl_unlock();
+
+    // Note: API < 1.5 returns 0 for vfs.
+    // TODO: Bug? local files start with '/', but that's classified as 'remote'.
+    if (strncmp("/", track_location, 1) || !deadbeef->is_local_file(track_location)) {
+        // Unable to update play count for remote audio, no file access.
+        return 0;
+    }
+
+    // If the frame exists reset its count, but don't create it.
+    DB_id3v2_tag_t id3v2 = {0};
+    DB_FILE *track_file = deadbeef->fopen(track_location);
+    deadbeef->junk_id3v2_read_full(track, &id3v2, track_file);
+
+    DB_id3v2_frame_t *pcnt = id3v2_tag_frame_get_pcnt(&id3v2);
+    uint8_t created = 0;
+
+    if (pcnt) {
+        DB_id3v2_frame_t *updated = id3v2_frame_pcnt_set(pcnt, 0);
+
+        if (updated != pcnt) {
+            // A new frame was created on count reset.
+            // Remove the old one, add the new one.
+            // Should only be one PCNT frame, so: removed == pcnt.
+            id3v2_tag_frame_rem_pcnt(&id3v2);
+
+            created = 1;
+            id3v2_tag_frame_add(&id3v2, updated);
+        }
+
+        // Save the changes.
+        FILE *actual_file = fopen(track_location, "r+");
+        fseek(actual_file, 0, SEEK_SET);
+        deadbeef->junk_id3v2_write(actual_file, &id3v2);
+        fclose(actual_file);
+    }
+
+    // Clean up resources.
+    if (created) { free(id3v2_tag_frame_rem_pcnt(&id3v2)); }
+    deadbeef->junk_id3v2_free(&id3v2);
+    deadbeef->fclose(track_file);
 
     return 0;
 }
@@ -216,23 +188,26 @@ static DB_plugin_action_t increment_playcount_action = {
         .callback = increment_playcount_callback,
         .next = &reset_playcount_action
 };
+#endif
 
 static DB_plugin_action_t *get_actions(DB_playItem_t *it) {
-    UNUSED(it)
-    return &increment_playcount_action;
-}
 
+    if (track_tag_supported(it)) {
+#ifdef DEBUG
+        return &increment_playcount_action;
 #else
-static DB_plugin_action_t* get_actions(DB_playItem_t *it) {
-    UNUSED(it)
-    return &reset_playcount_action;
-}
+        return &reset_playcount_action;
 #endif
+    }
+
+    return NULL;
+}
 
 static int handle_event(uint32_t id, uintptr_t ctx, uint32_t p1, uint32_t p2) {
     UNUSED(p1)
     UNUSED(p2)
 
+    // TODO: DB_EV_SONGFINISHED called when 'stop' button is clicked.
     if (DB_EV_SONGFINISHED == id) {
         // Increment the play count after a song has finished playing (simple).
         ddb_event_track_t *event_track = (ddb_event_track_t *) ctx;
