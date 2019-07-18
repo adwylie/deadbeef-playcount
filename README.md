@@ -14,11 +14,9 @@ or is automatically included in the CMake project if DeaDBeeF is installed.
 
 After cloning this repository, execute the following from its source directory
 to install the shared library:
-```bash
+```
 mkdir build && cd build
 cmake -DCMAKE_BUILD_TYPE=Release ..
 make
-
-# and on select platforms..
 make install
 ```
