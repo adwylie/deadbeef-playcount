@@ -20,7 +20,7 @@
  *
  * @return  A pointer to the created frame.
  */
-DB_id3v2_frame_t *id3v2_frame_pcnt_create(void);
+DB_id3v2_frame_t *id3v2_create_pcnt_frame(void);
 
 /**
  * Increment the play count value of an existing PCNT frame.
@@ -32,7 +32,7 @@ DB_id3v2_frame_t *id3v2_frame_pcnt_create(void);
  * @param frame  A pointer to the PCNT frame.
  * @return  A pointer to the updated frame.
  */
-DB_id3v2_frame_t *id3v2_frame_pcnt_inc(DB_id3v2_frame_t *pcnt_frame);
+DB_id3v2_frame_t *id3v2_pcnt_frame_inc_count(DB_id3v2_frame_t *frame);
 
 /**
  * Set the play count value of an existing PCNT frame.
@@ -41,7 +41,7 @@ DB_id3v2_frame_t *id3v2_frame_pcnt_inc(DB_id3v2_frame_t *pcnt_frame);
  * @param count  The play count to set.
  * @return  A pointer to the updated frame.
  */
-DB_id3v2_frame_t *id3v2_frame_pcnt_set(DB_id3v2_frame_t *pcnt_frame, uintmax_t count);
+DB_id3v2_frame_t *id3v2_pcnt_frame_set_count(DB_id3v2_frame_t *frame, uintmax_t count);
 
 /**
  * Add a frame to an ID3v2 tag.
@@ -49,7 +49,7 @@ DB_id3v2_frame_t *id3v2_frame_pcnt_set(DB_id3v2_frame_t *pcnt_frame, uintmax_t c
  * @param tag  A pointer to an ID3v2 tag.
  * @param frame  A pointer to an ID3v2 frame.
  */
-void id3v2_tag_frame_add(DB_id3v2_tag_t *tag, DB_id3v2_frame_t *frame);
+void id3v2_tag_add_frame(DB_id3v2_tag_t *tag, DB_id3v2_frame_t *frame);
 
 /**
  * Find the PCNT frame in an ID3v2 tag.
@@ -57,7 +57,7 @@ void id3v2_tag_frame_add(DB_id3v2_tag_t *tag, DB_id3v2_frame_t *frame);
  * @param tag  A pointer to an ID3v2 tag.
  * @return  A pointer to the PCNT frame, or NULL if the frame was not found.
  */
-DB_id3v2_frame_t *id3v2_tag_frame_get_pcnt(DB_id3v2_tag_t *tag);
+DB_id3v2_frame_t *id3v2_tag_get_pcnt_frame(DB_id3v2_tag_t *tag);
 
 
 /**
@@ -66,6 +66,6 @@ DB_id3v2_frame_t *id3v2_tag_frame_get_pcnt(DB_id3v2_tag_t *tag);
  * @param tag  A pointer to an ID3v2 tag.
  * @return  A pointer to the removed frame, or NULL if the frame was not found.
  */
-DB_id3v2_frame_t *id3v2_tag_frame_rem_pcnt(DB_id3v2_tag_t *tag);
+DB_id3v2_frame_t *id3v2_tag_rem_pcnt_frame(DB_id3v2_tag_t *tag);
 
 #endif //PLAYCOUNT_ID3V2_H_

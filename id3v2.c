@@ -17,7 +17,7 @@ static const char *PCNT_ID = "PCNT";
  * @param data_size  The counter data size in bytes.
  * @return  A pointer to the created frame.
  */
-static DB_id3v2_frame_t *id3v2_frame_pcnt_create_full(size_t data_size) {
+static DB_id3v2_frame_t *id3v2_create_full_pcnt_frame(size_t data_size) {
 #ifdef DEBUG
     trace("Creating a new PCNT frame.\n")
 #endif
@@ -34,11 +34,11 @@ static DB_id3v2_frame_t *id3v2_frame_pcnt_create_full(size_t data_size) {
     return frame;
 }
 
-DB_id3v2_frame_t *id3v2_frame_pcnt_create() {
-    return id3v2_frame_pcnt_create_full(DEFAULT_DATA_SIZE);
+DB_id3v2_frame_t *id3v2_create_pcnt_frame() {
+    return id3v2_create_full_pcnt_frame(DEFAULT_DATA_SIZE);
 }
 
-DB_id3v2_frame_t *id3v2_frame_pcnt_inc(DB_id3v2_frame_t *frame) {
+DB_id3v2_frame_t *id3v2_pcnt_frame_inc_count(DB_id3v2_frame_t *frame) {
     // Data is stored in big endian (network byte order). We'll modify it in
     // place in memory instead of converting to host bye order and back.
     // Scan from the right-most bit to find the first unset bit.
@@ -61,7 +61,7 @@ DB_id3v2_frame_t *id3v2_frame_pcnt_inc(DB_id3v2_frame_t *frame) {
         // Then set the play count. Right-most bit in first byte should be set,
         // it's the 'new' byte that was just added.
         if (window < frame->data) {
-            DB_id3v2_frame_t *f = id3v2_frame_pcnt_create_full(frame->size + 1);
+            DB_id3v2_frame_t *f = id3v2_create_full_pcnt_frame(frame->size + 1);
             if (f) { (*((uint8_t *) f->data)) = 1; }
             return f;
         }
@@ -93,7 +93,8 @@ DB_id3v2_frame_t *id3v2_frame_pcnt_inc(DB_id3v2_frame_t *frame) {
 
 // Endianness refers to how data is stored in memory, however when operating
 // on values in the processor's register they're represented in big endian.
-DB_id3v2_frame_t *id3v2_frame_pcnt_set(DB_id3v2_frame_t *frame, uintmax_t count) {
+DB_id3v2_frame_t *id3v2_pcnt_frame_set_count(
+        DB_id3v2_frame_t *frame, uintmax_t count) {
 
     // Find the minimum number of bytes needed to store the count value.
     // Move from the LSB to MSB and identify where we see the last set bit.
@@ -115,7 +116,7 @@ DB_id3v2_frame_t *id3v2_frame_pcnt_set(DB_id3v2_frame_t *frame, uintmax_t count)
 
     if (frame->size != byte_width) {
         // If different create a new frame with a specific size.
-        ret = id3v2_frame_pcnt_create_full(byte_width);
+        ret = id3v2_create_full_pcnt_frame(byte_width);
     }
 
     // Working with memory so consider endianness of the host. Note that we
@@ -134,7 +135,7 @@ DB_id3v2_frame_t *id3v2_frame_pcnt_set(DB_id3v2_frame_t *frame, uintmax_t count)
     return ret;
 }
 
-void id3v2_tag_frame_add(DB_id3v2_tag_t *tag, DB_id3v2_frame_t *frame) {
+void id3v2_tag_add_frame(DB_id3v2_tag_t *tag, DB_id3v2_frame_t *frame) {
     DB_id3v2_frame_t *tail = NULL;
     for (tail = tag->frames; tail && tail->next; tail = tail->next);
 
@@ -145,7 +146,7 @@ void id3v2_tag_frame_add(DB_id3v2_tag_t *tag, DB_id3v2_frame_t *frame) {
     }
 }
 
-DB_id3v2_frame_t *id3v2_tag_frame_get_pcnt(DB_id3v2_tag_t *tag) {
+DB_id3v2_frame_t *id3v2_tag_get_pcnt_frame(DB_id3v2_tag_t *tag) {
 
     DB_id3v2_frame_t *current = tag->frames;
 
@@ -159,7 +160,7 @@ DB_id3v2_frame_t *id3v2_tag_frame_get_pcnt(DB_id3v2_tag_t *tag) {
     return current;
 }
 
-DB_id3v2_frame_t *id3v2_tag_frame_rem_pcnt(DB_id3v2_tag_t *tag) {
+DB_id3v2_frame_t *id3v2_tag_rem_pcnt_frame(DB_id3v2_tag_t *tag) {
 
     DB_id3v2_frame_t *current = tag->frames;
     if (!current) { return NULL; }

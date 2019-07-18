@@ -28,9 +28,9 @@ static const char *TAG_TYPE_ID3V2_4 = "ID3v2.4";
  * - APEv1 & APEv2 don't have play count frames/properties.
  *
  * @param track  A pointer to the track to check support for.
- * @return A positive integer if the track is supported, zero otherwise.
+ * @return  A positive integer if the track is supported, zero otherwise.
  */
-static uint8_t track_tag_supported(DB_playItem_t *track) {
+static uint8_t is_track_tag_supported(DB_playItem_t *track) {
 
     if (track) {
         deadbeef->pl_lock();
@@ -64,25 +64,25 @@ static int increment_track_playcount(DB_playItem_t *track) {
     DB_FILE *track_file = deadbeef->fopen(track_location);
     deadbeef->junk_id3v2_read_full(track, &id3v2, track_file);
 
-    DB_id3v2_frame_t *pcnt = id3v2_tag_frame_get_pcnt(&id3v2);
+    DB_id3v2_frame_t *pcnt = id3v2_tag_get_pcnt_frame(&id3v2);
     uint8_t created = 0;
 
     if (!pcnt) {
-        pcnt = id3v2_frame_pcnt_create();
+        pcnt = id3v2_create_pcnt_frame();
         created = 1;
-        id3v2_tag_frame_add(&id3v2, pcnt);
+        id3v2_tag_add_frame(&id3v2, pcnt);
     }
 
-    DB_id3v2_frame_t *updated = id3v2_frame_pcnt_inc(pcnt);
+    DB_id3v2_frame_t *updated = id3v2_pcnt_frame_inc_count(pcnt);
     if (updated != pcnt) {
         // A new frame was created on count increment.
         // Remove the old one, add the new one.
         // Should only be one PCNT frame, so: removed == pcnt.
-        DB_id3v2_frame_t *removed = id3v2_tag_frame_rem_pcnt(&id3v2);
+        DB_id3v2_frame_t *removed = id3v2_tag_rem_pcnt_frame(&id3v2);
         if (created) { free(removed); }
 
         created = 1;
-        id3v2_tag_frame_add(&id3v2, updated);
+        id3v2_tag_add_frame(&id3v2, updated);
     }
 
     // Save the changes.
@@ -92,14 +92,21 @@ static int increment_track_playcount(DB_playItem_t *track) {
     fclose(actual_file);
 
     // Clean up resources.
-    if (created) { free(id3v2_tag_frame_rem_pcnt(&id3v2)); }
+    if (created) { free(id3v2_tag_rem_pcnt_frame(&id3v2)); }
     deadbeef->junk_id3v2_free(&id3v2);
     deadbeef->fclose(track_file);
 
     return 0;
 }
 
-static int reset_track_playcount(DB_playItem_t *track) {
+/**
+ * Write the given play count to the track's tag.
+ *
+ * @param track  A pointer to the track.
+ * @param count  The play count to set.
+ * @return  A positive integer if an error occurred, zero otherwise.
+ */
+static uint8_t set_track_tag_playcount(DB_playItem_t *track, uintmax_t count) {
 
     deadbeef->pl_lock();
     const char *track_location = deadbeef->pl_find_meta(track, LOCATION_TAG);
@@ -117,20 +124,20 @@ static int reset_track_playcount(DB_playItem_t *track) {
     DB_FILE *track_file = deadbeef->fopen(track_location);
     deadbeef->junk_id3v2_read_full(track, &id3v2, track_file);
 
-    DB_id3v2_frame_t *pcnt = id3v2_tag_frame_get_pcnt(&id3v2);
+    DB_id3v2_frame_t *pcnt = id3v2_tag_get_pcnt_frame(&id3v2);
     uint8_t created = 0;
 
     if (pcnt) {
-        DB_id3v2_frame_t *updated = id3v2_frame_pcnt_set(pcnt, 0);
+        DB_id3v2_frame_t *updated = id3v2_pcnt_frame_set_count(pcnt, count);
 
         if (updated != pcnt) {
             // A new frame was created on count reset.
             // Remove the old one, add the new one.
             // Should only be one PCNT frame, so: removed == pcnt.
-            id3v2_tag_frame_rem_pcnt(&id3v2);
+            id3v2_tag_rem_pcnt_frame(&id3v2);
 
             created = 1;
-            id3v2_tag_frame_add(&id3v2, updated);
+            id3v2_tag_add_frame(&id3v2, updated);
         }
 
         // Save the changes.
@@ -141,7 +148,7 @@ static int reset_track_playcount(DB_playItem_t *track) {
     }
 
     // Clean up resources.
-    if (created) { free(id3v2_tag_frame_rem_pcnt(&id3v2)); }
+    if (created) { free(id3v2_tag_rem_pcnt_frame(&id3v2)); }
     deadbeef->junk_id3v2_free(&id3v2);
     deadbeef->fclose(track_file);
 
@@ -162,7 +169,7 @@ static int reset_playcount_callback(
     // Note: When called from context menu function seems to be called once per
     //       track. The 'void *userdata' is a pointer to the track.
     UNUSED(action)
-    return reset_track_playcount((DB_playItem_t *) userdata);
+    return set_track_tag_playcount((DB_playItem_t *) userdata, 0);
 }
 
 static int increment_playcount_callback(
@@ -192,7 +199,7 @@ static DB_plugin_action_t increment_playcount_action = {
 
 static DB_plugin_action_t *get_actions(DB_playItem_t *it) {
 
-    if (track_tag_supported(it)) {
+    if (is_track_tag_supported(it)) {
 #ifdef DEBUG
         return &increment_playcount_action;
 #else
