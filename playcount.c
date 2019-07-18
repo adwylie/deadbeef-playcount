@@ -35,13 +35,16 @@ static uint8_t is_track_tag_supported(DB_playItem_t *track) {
 
     if (track) {
         deadbeef->pl_lock();
+        const char *track_location = deadbeef->pl_find_meta(track, LOCATION_TAG);
         const char *track_tag_type = deadbeef->pl_find_meta(track, TAG_TYPE_TAG);
         deadbeef->pl_unlock();
 
-        if (!strstr(track_tag_type, TAG_TYPE_ID3V2_3)
-                || !strstr(track_tag_type, TAG_TYPE_ID3V2_4)) {
-            return 1;
-        }
+        // Note: API >= 1.5 returns 1 for vfs.
+        const int is_local = deadbeef->is_local_file(track_location);
+        const char *id3v2_3 = strstr(track_tag_type, TAG_TYPE_ID3V2_3);
+        const char *id3v2_4 = strstr(track_tag_type, TAG_TYPE_ID3V2_4);
+
+        if (is_local && (id3v2_3 || id3v2_4)) { return 1; }
     }
 
     return 0;
@@ -58,13 +61,6 @@ static uintmax_t get_track_tag_playcount(DB_playItem_t *track) {
     deadbeef->pl_lock();
     const char *track_location = deadbeef->pl_find_meta(track, LOCATION_TAG);
     deadbeef->pl_unlock();
-
-    // Note: API < 1.5 returns 0 for vfs.
-    // TODO: Bug? local files start with '/', but that's classified as 'remote'.
-    if (strncmp("/", track_location, 1) || !deadbeef->is_local_file(track_location)) {
-        // Unable to update play count for remote audio, no file access.
-        return 0;
-    }
 
     // If the frame exists read its count.
     DB_id3v2_tag_t id3v2 = {0};
@@ -84,13 +80,6 @@ static uint8_t increment_track_tag_playcount(DB_playItem_t *track) {
     deadbeef->pl_lock();
     const char *track_location = deadbeef->pl_find_meta(track, LOCATION_TAG);
     deadbeef->pl_unlock();
-
-    // Note: API < 1.5 returns 0 for vfs.
-    // TODO: Bug? local files start with '/', but that's classified as 'remote'.
-    if (strncmp("/", track_location, 1) || !deadbeef->is_local_file(track_location)) {
-        // Unable to update play count for remote audio, no file access.
-        return 0;
-    }
 
     // Update the frame if it exists, otherwise create and set it.
     DB_id3v2_tag_t id3v2 = {0};
@@ -144,13 +133,6 @@ static uint8_t set_track_tag_playcount(DB_playItem_t *track, uintmax_t count) {
     deadbeef->pl_lock();
     const char *track_location = deadbeef->pl_find_meta(track, LOCATION_TAG);
     deadbeef->pl_unlock();
-
-    // Note: API < 1.5 returns 0 for vfs.
-    // TODO: Bug? local files start with '/', but that's classified as 'remote'.
-    if (strncmp("/", track_location, 1) || !deadbeef->is_local_file(track_location)) {
-        // Unable to update play count for remote audio, no file access.
-        return 0;
-    }
 
     // If the frame exists reset its count, but don't create it.
     DB_id3v2_tag_t id3v2 = {0};
