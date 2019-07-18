@@ -111,7 +111,6 @@ static uint8_t increment_track_tag_playcount(DB_playItem_t *track) {
 
     // Save the changes.
     FILE *actual_file = fopen(track_location, "r+");
-    fseek(actual_file, 0, SEEK_SET);
     deadbeef->junk_id3v2_write(actual_file, &id3v2);
     fclose(actual_file);
 
@@ -159,7 +158,6 @@ static uint8_t set_track_tag_playcount(DB_playItem_t *track, uintmax_t count) {
 
         // Save the changes.
         FILE *actual_file = fopen(track_location, "r+");
-        fseek(actual_file, 0, SEEK_SET);
         deadbeef->junk_id3v2_write(actual_file, &id3v2);
         fclose(actual_file);
     }
