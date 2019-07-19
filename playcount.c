@@ -111,17 +111,21 @@ static uintmax_t get_track_tag_playcount(DB_playItem_t *track) {
 }
 
 /**
- * Increment the play count on the track's tag.
+ * Write the given play count to the track's tag.
+ * <p>
+ * Creates the PCNT frame if one does not already exist.
+ *
  * @param track  A pointer to the track.
+ * @param count  The play count to set.
  * @return  A positive integer if an error occurred, zero otherwise.
  */
-static uint8_t inc_track_tag_playcount(DB_playItem_t *track) {
+static uint8_t set_track_tag_playcount(DB_playItem_t *track, uintmax_t count) {
 
     deadbeef->pl_lock();
     const char *track_location = deadbeef->pl_find_meta(track, LOCATION_TAG);
     deadbeef->pl_unlock();
 
-    // Update the frame if it exists, otherwise create and set it.
+    // Create the frame if it doesn't exist. Either way set its count.
     DB_id3v2_tag_t id3v2 = {0};
     DB_FILE *track_file = deadbeef->fopen(track_location);
     deadbeef->junk_id3v2_read_full(track, &id3v2, track_file);
@@ -135,9 +139,10 @@ static uint8_t inc_track_tag_playcount(DB_playItem_t *track) {
         id3v2_tag_add_frame(&id3v2, pcnt);
     }
 
-    DB_id3v2_frame_t *updated = id3v2_pcnt_frame_inc_count(pcnt);
+    DB_id3v2_frame_t *updated = id3v2_pcnt_frame_set_count(pcnt, count);
+
     if (updated != pcnt) {
-        // A new frame was created on count increment.
+        // A new frame was created on count update.
         // Remove the old one, add the new one.
         // Should only be one PCNT frame, so: removed == pcnt.
         DB_id3v2_frame_t *removed = id3v2_tag_rem_pcnt_frame(&id3v2);
@@ -151,54 +156,6 @@ static uint8_t inc_track_tag_playcount(DB_playItem_t *track) {
     FILE *actual_file = fopen(track_location, "r+");
     deadbeef->junk_id3v2_write(actual_file, &id3v2);
     fclose(actual_file);
-
-    // Clean up resources.
-    if (created) { free(id3v2_tag_rem_pcnt_frame(&id3v2)); }
-    deadbeef->junk_id3v2_free(&id3v2);
-    deadbeef->fclose(track_file);
-
-    return 0;
-}
-
-/**
- * Write the given play count to the track's tag.
- *
- * @param track  A pointer to the track.
- * @param count  The play count to set.
- * @return  A positive integer if an error occurred, zero otherwise.
- */
-static uint8_t set_track_tag_playcount(DB_playItem_t *track, uintmax_t count) {
-
-    deadbeef->pl_lock();
-    const char *track_location = deadbeef->pl_find_meta(track, LOCATION_TAG);
-    deadbeef->pl_unlock();
-
-    // If the frame exists reset its count, but don't create it.
-    DB_id3v2_tag_t id3v2 = {0};
-    DB_FILE *track_file = deadbeef->fopen(track_location);
-    deadbeef->junk_id3v2_read_full(track, &id3v2, track_file);
-
-    DB_id3v2_frame_t *pcnt = id3v2_tag_get_pcnt_frame(&id3v2);
-    uint8_t created = 0;
-
-    if (pcnt) {
-        DB_id3v2_frame_t *updated = id3v2_pcnt_frame_set_count(pcnt, count);
-
-        if (updated != pcnt) {
-            // A new frame was created on count reset.
-            // Remove the old one, add the new one.
-            // Should only be one PCNT frame, so: removed == pcnt.
-            id3v2_tag_rem_pcnt_frame(&id3v2);
-
-            created = 1;
-            id3v2_tag_add_frame(&id3v2, updated);
-        }
-
-        // Save the changes.
-        FILE *actual_file = fopen(track_location, "r+");
-        deadbeef->junk_id3v2_write(actual_file, &id3v2);
-        fclose(actual_file);
-    }
 
     // Clean up resources.
     if (created) { free(id3v2_tag_rem_pcnt_frame(&id3v2)); }

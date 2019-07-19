@@ -23,18 +23,6 @@
 DB_id3v2_frame_t *id3v2_create_pcnt_frame(void);
 
 /**
- * Increment the play count value of an existing PCNT frame.
- *
- * A new frame will be allocated when the play count value is too large to be
- * stored in the current frame. It is up to the caller to test if this has
- * occurred and act accordingly.
- *
- * @param frame  A pointer to the PCNT frame.
- * @return  A pointer to the updated frame.
- */
-DB_id3v2_frame_t *id3v2_pcnt_frame_inc_count(DB_id3v2_frame_t *frame);
-
-/**
  * Get the play count value of an existing PCNT frame.
  *
  * @param frame  A pointer to the PCNT frame.

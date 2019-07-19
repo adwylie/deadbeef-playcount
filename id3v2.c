@@ -38,59 +38,6 @@ DB_id3v2_frame_t *id3v2_create_pcnt_frame() {
     return id3v2_create_full_pcnt_frame(DEFAULT_DATA_SIZE);
 }
 
-DB_id3v2_frame_t *id3v2_pcnt_frame_inc_count(DB_id3v2_frame_t *frame) {
-    // Data is stored in big endian (network byte order). We'll modify it in
-    // place in memory instead of converting to host bye order and back.
-    // Scan from the right-most bit to find the first unset bit.
-    uint8_t position = 0;
-    uint8_t mask = 1;
-    uint8_t *window = frame->data + frame->size - 1;
-
-    while (*window & mask) {
-        mask <<= 1u;
-        position++;
-
-        // Reset the mask & window when we would start reading the next byte.
-        if (!(position % (sizeof(*window) * CHAR_BIT))) {
-            mask = 1;
-            window -= 1;
-        }
-
-        // Determine if we've overrun the data (reading into frame->flags).
-        // Reallocate adding an additional byte for play count value storage.
-        // Then set the play count. Right-most bit in first byte should be set,
-        // it's the 'new' byte that was just added.
-        if (window < frame->data) {
-            DB_id3v2_frame_t *f = id3v2_create_full_pcnt_frame(frame->size + 1);
-            if (f) { (*((uint8_t *) f->data)) = 1; }
-            return f;
-        }
-    }
-
-    // Set the first unset bit.
-    *window |= mask;
-
-    // Clear all bits to the right.
-    uint8_t clear_position = 0;
-    mask = 1u;
-    window = frame->data + frame->size - 1;
-
-    while (clear_position < position) {
-        *window &= ~mask;
-
-        mask <<= 1u;
-        clear_position++;
-
-        // Reset the mask & window when we would start reading the next byte.
-        if (!(clear_position % (sizeof(*window) * CHAR_BIT))) {
-            mask = 1;
-            window -= 1;
-        }
-    }
-
-    return frame;
-}
-
 uintmax_t id3v2_pcnt_frame_get_count(DB_id3v2_frame_t *frame) {
 
     // Check if we can actually display the play count value.
