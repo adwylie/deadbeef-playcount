@@ -79,7 +79,12 @@ static uintmax_t get_track_tag_playcount(DB_playItem_t *track) {
     return 0;
 }
 
-static uint8_t increment_track_tag_playcount(DB_playItem_t *track) {
+/**
+ * Increment the play count on the track's tag.
+ * @param track  A pointer to the track.
+ * @return  A positive integer if an error occurred, zero otherwise.
+ */
+static uint8_t inc_track_tag_playcount(DB_playItem_t *track) {
 
     deadbeef->pl_lock();
     const char *track_location = deadbeef->pl_find_meta(track, LOCATION_TAG);
@@ -192,7 +197,7 @@ static int reset_playcount_callback(
 static int increment_playcount_callback(
         struct DB_plugin_action_s *action, void *userdata) {
     UNUSED(action)
-    return increment_track_tag_playcount((DB_playItem_t *) userdata);
+    return inc_track_tag_playcount((DB_playItem_t *) userdata);
 }
 
 // Add action(s) to the song context menu.
@@ -261,7 +266,7 @@ static int handle_event(uint32_t current_event, uintptr_t ctx, uint32_t p1, uint
     if (DB_EV_SONGFINISHED == current_event && DB_EV_STOP != previous_event) {
 
         ddb_event_track_t *event_track = (ddb_event_track_t *) ctx;
-        return increment_track_tag_playcount(event_track->track);
+        return inc_track_tag_playcount(event_track->track);
     }
 
     previous_event = current_event;
