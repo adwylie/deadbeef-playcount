@@ -39,6 +39,8 @@ static uint8_t is_track_tag_supported(DB_playItem_t *track) {
         const char *track_tag_type = deadbeef->pl_find_meta(track, TAG_TYPE_TAG);
         deadbeef->pl_unlock();
 
+        if (!track_location || !track_tag_type) { return 0; }
+
         // Note: API >= 1.5 returns 1 for vfs.
         const int is_local = deadbeef->is_local_file(track_location);
         const char *id3v2_3 = strstr(track_tag_type, TAG_TYPE_ID3V2_3);
