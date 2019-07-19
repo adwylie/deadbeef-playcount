@@ -1,4 +1,4 @@
-#include <inttypes.h>
+#include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,12 +13,44 @@
 
 static DB_functions_t *deadbeef;
 
+static const char *PLAY_COUNT_META = "play_count";
+
 static const char *LOCATION_TAG = ":URI";
 static const char *TAG_TYPE_TAG = ":TAGS";
 
 static const char *TAG_TYPE_ID3V2_3 = "ID3v2.3";
 static const char *TAG_TYPE_ID3V2_4 = "ID3v2.4";
 
+//
+//  Metadata Operations.
+//
+static int get_track_meta_playcount(DB_playItem_t *track) {
+    return deadbeef->pl_find_meta_int(track, PLAY_COUNT_META, 0);
+}
+
+static void set_track_meta_playcount(DB_playItem_t *track, int count) {
+    deadbeef->pl_lock();
+    deadbeef->pl_set_meta_int(track, PLAY_COUNT_META, count);
+    deadbeef->pl_unlock();
+}
+
+static void inc_track_meta_playcount(DB_playItem_t *track) {
+    int count = get_track_meta_playcount(track);
+
+    if (count >= INT_MAX) {
+#ifdef DEBUG
+        trace("Meta count is larger than can be stored.")
+#endif
+        set_track_meta_playcount(track, INT_MAX);
+
+    } else {
+        set_track_meta_playcount(track, count + 1);
+    }
+}
+
+//
+//  Tag Operations
+//
 /**
  * Return whether a track is supported by the plugin (wrt/ tags).
  *
@@ -41,7 +73,6 @@ static uint8_t is_track_tag_supported(DB_playItem_t *track) {
 
         if (!track_location || !track_tag_type) { return 0; }
 
-        // Note: API >= 1.5 returns 1 for vfs.
         const int is_local = deadbeef->is_local_file(track_location);
         const char *id3v2_3 = strstr(track_tag_type, TAG_TYPE_ID3V2_3);
         const char *id3v2_4 = strstr(track_tag_type, TAG_TYPE_ID3V2_4);
@@ -177,30 +208,78 @@ static uint8_t set_track_tag_playcount(DB_playItem_t *track, uintmax_t count) {
     return 0;
 }
 
+//
+//  Interoperability (play_count tag <---> pcnt meta)
+//
+static void save_meta_to_tag(DB_playItem_t *track) {
+    set_track_tag_playcount(track, get_track_meta_playcount(track));
+}
+
+static void load_tag_to_meta(DB_playItem_t *track) {
+    uintmax_t count = get_track_tag_playcount(track);
+
+    if (count > INT_MAX) {
+#ifdef DEBUG
+        trace("Tag count is larger than can be displayed.")
+#endif
+        count = INT_MAX;
+    }
+
+    set_track_meta_playcount(track, (int) count);
+}
+
+static void save_meta_to_tags() {
+    DB_playItem_t *track = deadbeef->pl_get_first(PL_MAIN);
+
+    while (track) {
+        save_meta_to_tag(track);
+
+        deadbeef->pl_item_unref(track);
+        track = deadbeef->pl_get_next(track, PL_MAIN);
+    }
+}
+
+static void load_tags_to_meta() {
+    DB_playItem_t *track = deadbeef->pl_get_first(PL_MAIN);
+
+    while (track) {
+        load_tag_to_meta(track);
+
+        deadbeef->pl_item_unref(track);
+        track = deadbeef->pl_get_next(track, PL_MAIN);
+    }
+}
+
+//
+//  Interface Implementation
+//
 static int start() {
     // Note: Plugin will be unloaded if start returns -1.
     return 0;
 }
 
+static int connect() {
+    // Loading tags to meta works in either connect() or on DB_EV_PLUGINSLOADED
+    // event, but not in start(). Call here so we can be backwards compatible
+    // to API 1.0 instead of 1.5.
+    load_tags_to_meta();
+    return 0;
+}
+
 static int stop() {
+    save_meta_to_tags();
     return 0;
 }
 
 static int reset_playcount_callback(
         struct DB_plugin_action_s *action, void *userdata) {
-    // Note: When called from context menu function seems to be called once per
-    //       track. The 'void *userdata' is a pointer to the track.
+    // When called from the context menu this function is called once per
+    // track. The 'void *userdata' is a pointer to the track.
     UNUSED(action)
-    return set_track_tag_playcount((DB_playItem_t *) userdata, 0);
+    set_track_meta_playcount((DB_playItem_t *) userdata, 0);
+    return 0;
 }
 
-static int increment_playcount_callback(
-        struct DB_plugin_action_s *action, void *userdata) {
-    UNUSED(action)
-    return inc_track_tag_playcount((DB_playItem_t *) userdata);
-}
-
-// Add action(s) to the song context menu.
 static DB_plugin_action_t reset_playcount_action = {
         .title = "Reset Playcount",
         .name = "reset_playcount",
@@ -210,6 +289,13 @@ static DB_plugin_action_t reset_playcount_action = {
 };
 
 #ifdef DEBUG
+static int increment_playcount_callback(
+        struct DB_plugin_action_s *action, void *userdata) {
+    UNUSED(action)
+    inc_track_meta_playcount((DB_playItem_t *) userdata);
+    return 0;
+}
+
 static DB_plugin_action_t increment_playcount_action = {
         .title = "Increment Playcount",
         .name = "increment_playcount",
@@ -217,35 +303,14 @@ static DB_plugin_action_t increment_playcount_action = {
         .callback = increment_playcount_callback,
         .next = &reset_playcount_action
 };
-
-static int get_playcount_callback(
-        struct DB_plugin_action_s *action, void *userdata) {
-    UNUSED(action)
-
-    deadbeef->pl_lock();
-    const char *title = deadbeef->pl_find_meta((DB_playItem_t *) userdata, "title");
-    deadbeef->pl_unlock();
-
-    trace("%s: %" PRIuMAX "\n",
-            title, get_track_tag_playcount((DB_playItem_t *) userdata))
-
-    return 0;
-}
-
-static DB_plugin_action_t get_playcount_action = {
-        .title = "Get Playcount",
-        .name = "get_playcount",
-        .flags = DB_ACTION_SINGLE_TRACK | DB_ACTION_MULTIPLE_TRACKS,
-        .callback = get_playcount_callback,
-        .next = &increment_playcount_action
-};
 #endif
 
 static DB_plugin_action_t *get_actions(DB_playItem_t *it) {
-
+    // Metadata is only temporary, so only allow it to be displayed if we can
+    // actually save its state.
     if (is_track_tag_supported(it)) {
 #ifdef DEBUG
-        return &get_playcount_action;
+        return &increment_playcount_action;
 #else
         return &reset_playcount_action;
 #endif
@@ -264,9 +329,8 @@ static int handle_event(uint32_t current_event, uintptr_t ctx, uint32_t p1, uint
     // However we also get these event types when the song is stopped (stop
     // event occurs first).
     if (DB_EV_SONGFINISHED == current_event && DB_EV_STOP != previous_event) {
-
         ddb_event_track_t *event_track = (ddb_event_track_t *) ctx;
-        return inc_track_tag_playcount(event_track->track);
+        inc_track_meta_playcount(event_track->track);
     }
 
     previous_event = current_event;
@@ -311,7 +375,7 @@ static DB_misc_t plugin = {
 
         .start = start,
         .stop = stop,
-        .connect = NULL,
+        .connect = connect,
         .disconnect = NULL,
         .exec_cmdline = NULL,
         .get_actions = get_actions,

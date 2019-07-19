@@ -2,8 +2,7 @@
 ### DeaDBeeF Play Count Plugin
 
 This is a 3rd-party plugin that enables play count tracking for the [DeaDBeeF
-audio player](http://deadbeef.sourceforge.net/). It currently supports updating
-ID3v2 tags (2.3, 2.4) for MP3 files.
+audio player](http://deadbeef.sourceforge.net/).
 
 
 #### Building, Installation, Removal
@@ -20,3 +19,17 @@ cmake -DCMAKE_BUILD_TYPE=Release ..
 make
 make install
 ```
+
+To remove the plugin, delete any `playcount.so*` files from the local DeaDBeeF
+library directory (`~/.local/lib/deadbeef/`).
+
+
+#### Configuration
+
+To display the play count value in the GUI we:
+- Right click on the playlist header row, click "Add Column".
+- Use the following settings:
+    - Title: `Play Count`
+    - Type: `Custom`
+    - Format: `%play_count%`
+- Click "OK".
