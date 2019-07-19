@@ -1,11 +1,11 @@
 
-### DeaDBeeF Play Count Plugin
+## DeaDBeeF Play Count Plugin
 
 This is a 3rd-party plugin that enables play count tracking for the [DeaDBeeF
 audio player](http://deadbeef.sourceforge.net/).
 
 
-#### Building, Installation, Removal
+### Building, Installation, Removal
 
 The header file `deadbeef.h` is required for compilation. It can be retrieved
 from either the [DeaDBeeF source code](https://github.com/DeaDBeeF-Player/deadbeef),
@@ -24,7 +24,7 @@ To remove the plugin, delete any `playcount.so*` files from the local DeaDBeeF
 library directory (`~/.local/lib/deadbeef/`).
 
 
-#### Configuration
+### Configuration
 
 To display the play count value in the GUI we:
 - Right click on the playlist header row, click "Add Column".
