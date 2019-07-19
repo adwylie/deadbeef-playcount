@@ -249,17 +249,22 @@ static DB_plugin_action_t *get_actions(DB_playItem_t *it) {
     return NULL;
 }
 
-static int handle_event(uint32_t id, uintptr_t ctx, uint32_t p1, uint32_t p2) {
+static uint32_t previous_event = 0;
+
+static int handle_event(uint32_t current_event, uintptr_t ctx, uint32_t p1, uint32_t p2) {
     UNUSED(p1)
     UNUSED(p2)
 
-    // TODO: DB_EV_SONGFINISHED called when 'stop' button is clicked.
-    if (DB_EV_SONGFINISHED == id) {
-        // Increment the play count after a song has finished playing (simple).
+    // We want to increment the play count when we get a song finished event.
+    // However we also get these event types when the song is stopped (stop
+    // event occurs first).
+    if (DB_EV_SONGFINISHED == current_event && DB_EV_STOP != previous_event) {
+
         ddb_event_track_t *event_track = (ddb_event_track_t *) ctx;
         return increment_track_tag_playcount(event_track->track);
     }
 
+    previous_event = current_event;
     return 0;
 }
 
