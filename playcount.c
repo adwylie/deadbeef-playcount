@@ -91,6 +91,8 @@ static uint8_t is_track_tag_supported(DB_playItem_t *track) {
  */
 static uintmax_t get_track_tag_playcount(DB_playItem_t *track) {
 
+    uintmax_t count = 0;
+
     deadbeef->pl_lock();
     const char *track_location = deadbeef->pl_find_meta(track, LOCATION_TAG);
     deadbeef->pl_unlock();
@@ -101,13 +103,11 @@ static uintmax_t get_track_tag_playcount(DB_playItem_t *track) {
     deadbeef->junk_id3v2_read_full(track, &id3v2, track_file);
 
     DB_id3v2_frame_t *pcnt = id3v2_tag_get_pcnt_frame(&id3v2);
-    if (pcnt) {
-        return id3v2_pcnt_frame_get_count(pcnt);
-    }
+    if (pcnt) { count = id3v2_pcnt_frame_get_count(pcnt); }
 
     deadbeef->junk_id3v2_free(&id3v2);
     deadbeef->fclose(track_file);
-    return 0;
+    return count;
 }
 
 /**
