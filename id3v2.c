@@ -6,8 +6,6 @@
 #include <deadbeef.h>
 #include "id3v2.h"
 
-#define trace(...) { fprintf(stderr, __VA_ARGS__); }
-
 static const size_t DEFAULT_DATA_SIZE = sizeof(uint32_t);
 static const char *PCNT_ID = "PCNT";
 
@@ -18,9 +16,6 @@ static const char *PCNT_ID = "PCNT";
  * @return  A pointer to the created frame.
  */
 static DB_id3v2_frame_t *id3v2_create_full_pcnt_frame(size_t data_size) {
-#ifdef DEBUG
-    trace("Creating a new PCNT frame.\n")
-#endif
     DB_id3v2_frame_t *frame = malloc(data_size + sizeof *frame);
 
     if (frame) {
@@ -124,9 +119,6 @@ DB_id3v2_frame_t *id3v2_tag_get_pcnt_frame(DB_id3v2_tag_t *tag) {
         current = current->next;
     }
 
-#ifdef DEBUG
-    if (!current) { trace("PCNT frame not found.\n") }
-#endif
     return current;
 }
 
