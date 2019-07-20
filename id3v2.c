@@ -21,12 +21,11 @@ static DB_id3v2_frame_t *id3v2_create_full_pcnt_frame(size_t data_size) {
 #ifdef DEBUG
     trace("Creating a new PCNT frame.\n")
 #endif
-    DB_id3v2_frame_t *frame = malloc(sizeof(DB_id3v2_frame_t) + data_size);
+    DB_id3v2_frame_t *frame = malloc(data_size + sizeof *frame);
 
     if (frame) {
-        // Initialize the entire frame, as all flags should
-        // be cleared and the counter should begin at zero.
-        memset(frame, 0, sizeof(DB_id3v2_frame_t) + data_size);
+        // All flags should be cleared, and the counter begins at zero.
+        memset(frame, 0, data_size + sizeof *frame);
         strcpy(frame->id, PCNT_ID);
         frame->size = data_size;
     }
