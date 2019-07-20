@@ -39,7 +39,7 @@ static void inc_track_meta_playcount(DB_playItem_t *track) {
 
     if (count >= INT_MAX) {
 #ifdef DEBUG
-        trace("Meta count is larger than can be stored.")
+        trace("playcount: meta count is larger than can be stored.\n")
 #endif
         set_track_meta_playcount(track, INT_MAX);
 
@@ -86,12 +86,12 @@ static uint8_t is_track_tag_supported(DB_playItem_t *track) {
 /**
  * Read the play count from the track's tag.
  *
+ * If no PCNT frame exists a count of zero is returned.
+ *
  * @param track  A pointer to the track.
  * @return  The currently set play count value.
  */
 static uintmax_t get_track_tag_playcount(DB_playItem_t *track) {
-
-    uintmax_t count = 0;
 
     deadbeef->pl_lock();
     const char *track_location = deadbeef->pl_find_meta(track, LOCATION_TAG);
@@ -102,9 +102,11 @@ static uintmax_t get_track_tag_playcount(DB_playItem_t *track) {
     DB_FILE *track_file = deadbeef->fopen(track_location);
     deadbeef->junk_id3v2_read_full(track, &id3v2, track_file);
 
+    uintmax_t count = 0;
     DB_id3v2_frame_t *pcnt = id3v2_tag_get_pcnt_frame(&id3v2);
     if (pcnt) { count = id3v2_pcnt_frame_get_count(pcnt); }
 
+    // Clean up resources.
     deadbeef->junk_id3v2_free(&id3v2);
     deadbeef->fclose(track_file);
     return count;
@@ -112,7 +114,7 @@ static uintmax_t get_track_tag_playcount(DB_playItem_t *track) {
 
 /**
  * Write the given play count to the track's tag.
- * <p>
+ *
  * Creates the PCNT frame if one does not already exist.
  *
  * @param track  A pointer to the track.
@@ -166,7 +168,7 @@ static uint8_t set_track_tag_playcount(DB_playItem_t *track, uintmax_t count) {
 }
 
 //
-//  Interoperability (play_count tag <---> pcnt meta)
+//  Interoperability (play_count meta <---> pcnt tag)
 //
 static void save_meta_to_tag(DB_playItem_t *track) {
     set_track_tag_playcount(track, get_track_meta_playcount(track));
@@ -177,19 +179,27 @@ static void load_tag_to_meta(DB_playItem_t *track) {
 
     if (count > INT_MAX) {
 #ifdef DEBUG
-        trace("Tag count is larger than can be displayed.")
+        trace("playcount: tag count is larger than can be displayed.\n")
 #endif
         count = INT_MAX;
     }
-
-    set_track_meta_playcount(track, (int) count);
+    set_track_meta_playcount(track, count);
 }
 
 static void save_meta_to_tags() {
     DB_playItem_t *track = deadbeef->pl_get_first(PL_MAIN);
 
     while (track) {
-        save_meta_to_tag(track);
+        if (is_track_tag_supported(track)) {
+            save_meta_to_tag(track);
+#ifdef DEBUG
+        } else {
+            deadbeef->pl_lock();
+            const char *location = deadbeef->pl_find_meta(track, LOCATION_TAG);
+            deadbeef->pl_unlock();
+            trace("playcount: save unsupported: '%s'\n", location)
+#endif
+        }
 
         deadbeef->pl_item_unref(track);
         track = deadbeef->pl_get_next(track, PL_MAIN);
@@ -200,7 +210,16 @@ static void load_tags_to_meta() {
     DB_playItem_t *track = deadbeef->pl_get_first(PL_MAIN);
 
     while (track) {
-        load_tag_to_meta(track);
+        if (is_track_tag_supported(track)) {
+            load_tag_to_meta(track);
+#ifdef DEBUG
+        } else {
+            deadbeef->pl_lock();
+            const char *location = deadbeef->pl_find_meta(track, LOCATION_TAG);
+            deadbeef->pl_unlock();
+            trace("playcount: load unsupported: '%s'\n", location)
+#endif
+        }
 
         deadbeef->pl_item_unref(track);
         track = deadbeef->pl_get_next(track, PL_MAIN);
@@ -287,7 +306,9 @@ static int handle_event(uint32_t current_event, uintptr_t ctx, uint32_t p1, uint
     // event occurs first).
     if (DB_EV_SONGFINISHED == current_event && DB_EV_STOP != previous_event) {
         ddb_event_track_t *event_track = (ddb_event_track_t *) ctx;
-        inc_track_meta_playcount(event_track->track);
+        DB_playItem_t *track = event_track->track;
+
+        if (is_track_tag_supported(track)) { inc_track_meta_playcount(track); }
     }
 
     previous_event = current_event;
