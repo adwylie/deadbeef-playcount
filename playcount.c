@@ -296,10 +296,13 @@ static DB_plugin_action_t *get_actions(DB_playItem_t *it) {
 }
 
 static uint32_t previous_event = 0;
+static int previous_count = INT_MAX;
 
 static int handle_event(uint32_t current_event, uintptr_t ctx, uint32_t p1, uint32_t p2) {
     UNUSED(p1)
     UNUSED(p2)
+
+    int current_count = deadbeef->pl_getcount(PL_MAIN);
 
     // We want to increment the play count when we get a song finished event.
     // However we also get these event types when the song is stopped (stop
@@ -311,6 +314,22 @@ static int handle_event(uint32_t current_event, uintptr_t ctx, uint32_t p1, uint
         if (is_track_tag_supported(track)) { inc_track_meta_playcount(track); }
     }
 
+    // We want to load tags to meta when adding tracks to the player, and save
+    // meta to tags when removing tracks from the player.
+    //
+    // Unfortunately playlist change events don't contain any context and are
+    // called by many different actions. We can detect added tracks by using
+    // both the event and the increase in song count. There's no easy way to
+    // detect removed tracks, so instead we'll save meta to tags after every
+    // meta play count change instead (eg. removal from player is same event as
+    // deletion from disk).
+    else if (DB_EV_PLAYLISTCHANGED == current_event && current_count > previous_count) {
+#ifdef DEBUG
+        trace("TEST: DETECT SONG(S) ADDED\n")
+#endif
+    }
+
+    previous_count = current_count;
     previous_event = current_event;
     return 0;
 }
