@@ -24,28 +24,20 @@ static const char *TAG_TYPE_ID3V2_4 = "ID3v2.4";
 //
 //  Metadata Operations.
 //
+/**
+ * Return the meta play_count value.
+ *
+ * @param track  A pointer to the track.
+ * @return  The play_count, or -1 if the value isn't set.
+ */
 static int get_track_meta_playcount(DB_playItem_t *track) {
-    return deadbeef->pl_find_meta_int(track, PLAY_COUNT_META, 0);
+    return deadbeef->pl_find_meta_int(track, PLAY_COUNT_META, -1);
 }
 
 static void set_track_meta_playcount(DB_playItem_t *track, int count) {
     deadbeef->pl_lock();
     deadbeef->pl_set_meta_int(track, PLAY_COUNT_META, count);
     deadbeef->pl_unlock();
-}
-
-static void inc_track_meta_playcount(DB_playItem_t *track) {
-    int count = get_track_meta_playcount(track);
-
-    if (count >= INT_MAX) {
-#ifdef DEBUG
-        trace("playcount: meta count is larger than can be stored.\n")
-#endif
-        set_track_meta_playcount(track, INT_MAX);
-
-    } else {
-        set_track_meta_playcount(track, count + 1);
-    }
 }
 
 //
@@ -168,45 +160,22 @@ static uint8_t set_track_tag_playcount(DB_playItem_t *track, uintmax_t count) {
 }
 
 //
-//  Interoperability (play_count meta <---> pcnt tag)
+//  Interoperability (meta play_count <---> tag pcnt)
 //
-static void save_meta_to_tag(DB_playItem_t *track) {
-    set_track_tag_playcount(track, get_track_meta_playcount(track));
-}
-
 static void load_tag_to_meta(DB_playItem_t *track) {
     uintmax_t count = get_track_tag_playcount(track);
 
     if (count > INT_MAX) {
 #ifdef DEBUG
-        trace("playcount: tag count is larger than can be displayed.\n")
+        trace("playcount: tag count is larger than can be displayed\n")
 #endif
         count = INT_MAX;
     }
     set_track_meta_playcount(track, count);
 }
 
-static void save_meta_to_tags() {
-    DB_playItem_t *track = deadbeef->pl_get_first(PL_MAIN);
-
-    while (track) {
-        if (is_track_tag_supported(track)) {
-            save_meta_to_tag(track);
-#ifdef DEBUG
-        } else {
-            deadbeef->pl_lock();
-            const char *location = deadbeef->pl_find_meta(track, LOCATION_TAG);
-            deadbeef->pl_unlock();
-            trace("playcount: save unsupported: '%s'\n", location)
-#endif
-        }
-
-        deadbeef->pl_item_unref(track);
-        track = deadbeef->pl_get_next(track, PL_MAIN);
-    }
-}
-
-static void load_tags_to_meta() {
+// Load tag PCNT to meta play_count for all tracks.
+static void load_tags_to_meta(void) {
     DB_playItem_t *track = deadbeef->pl_get_first(PL_MAIN);
 
     while (track) {
@@ -226,15 +195,68 @@ static void load_tags_to_meta() {
     }
 }
 
+// Load tag PCNT to meta play_count for tracks without a meta value.
+static void load_tags_to_missing_meta(void) {
+    DB_playItem_t *track = deadbeef->pl_get_first(PL_MAIN);
+
+    while (track) {
+        if (is_track_tag_supported(track)) {
+            int count = get_track_meta_playcount(track);
+            if (count < 0) {
+                load_tag_to_meta(track);
+#ifdef DEBUG
+                deadbeef->pl_lock();
+                const char *location = deadbeef->pl_find_meta(track, LOCATION_TAG);
+                deadbeef->pl_unlock();
+                trace("playcount: load supported: '%s'\n", location)
+#endif
+            }
+        }
+
+        deadbeef->pl_item_unref(track);
+        track = deadbeef->pl_get_next(track, PL_MAIN);
+    }
+}
+
+static void set_track_playcount(DB_playItem_t *track, int count) {
+    set_track_meta_playcount(track, count);
+    set_track_tag_playcount(track, count);
+}
+
+// Increment track play count (using meta play_count as the authoritative
+// value). Ensure the incremented value is valid, and then save to both meta
+// and tags.
+static void inc_track_playcount(DB_playItem_t *track) {
+    int count = get_track_meta_playcount(track);
+
+    if (count < 0) {
+        uintmax_t tag_count = get_track_tag_playcount(track);
+
+        if (tag_count < INT_MAX) {
+            count = tag_count + 1;
+
+        } else {
+            count = INT_MAX;
+#ifdef DEBUG
+            trace("playcount: tag count is larger than can be displayed\n")
+#endif
+        }
+    } else if (count < INT_MAX) {
+        count += 1;
+    }
+
+    set_track_playcount(track, count);
+}
+
 //
 //  Interface Implementation
 //
-static int start() {
+static int start(void) {
     // Note: Plugin will be unloaded if start returns -1.
     return 0;
 }
 
-static int connect() {
+static int connect(void) {
     // Loading tags to meta works in either connect() or on DB_EV_PLUGINSLOADED
     // event, but not in start(). Call here so we can be backwards compatible
     // to API 1.0 instead of 1.5.
@@ -242,8 +264,7 @@ static int connect() {
     return 0;
 }
 
-static int stop() {
-    save_meta_to_tags();
+static int stop(void) {
     return 0;
 }
 
@@ -252,7 +273,7 @@ static int reset_playcount_callback(
     // When called from the context menu this function is called once per
     // track. The 'void *userdata' is a pointer to the track.
     UNUSED(action)
-    set_track_meta_playcount((DB_playItem_t *) userdata, 0);
+    set_track_playcount((DB_playItem_t *) userdata, 0);
     return 0;
 }
 
@@ -268,7 +289,7 @@ static DB_plugin_action_t reset_playcount_action = {
 static int increment_playcount_callback(
         struct DB_plugin_action_s *action, void *userdata) {
     UNUSED(action)
-    inc_track_meta_playcount((DB_playItem_t *) userdata);
+    inc_track_playcount((DB_playItem_t *) userdata);
     return 0;
 }
 
@@ -282,8 +303,8 @@ static DB_plugin_action_t increment_playcount_action = {
 #endif
 
 static DB_plugin_action_t *get_actions(DB_playItem_t *it) {
-    // Metadata is only temporary, so only allow it to be displayed if we can
-    // actually save its state.
+    // Metadata is temporary, so only allow it to be displayed/modified if
+    // we can actually save its state.
     if (is_track_tag_supported(it)) {
 #ifdef DEBUG
         return &increment_playcount_action;
@@ -311,7 +332,7 @@ static int handle_event(uint32_t current_event, uintptr_t ctx, uint32_t p1, uint
         ddb_event_track_t *event_track = (ddb_event_track_t *) ctx;
         DB_playItem_t *track = event_track->track;
 
-        if (is_track_tag_supported(track)) { inc_track_meta_playcount(track); }
+        if (is_track_tag_supported(track)) { inc_track_playcount(track); }
     }
 
     // We want to load tags to meta when adding tracks to the player, and save
@@ -320,13 +341,11 @@ static int handle_event(uint32_t current_event, uintptr_t ctx, uint32_t p1, uint
     // Unfortunately playlist change events don't contain any context and are
     // called by many different actions. We can detect added tracks by using
     // both the event and the increase in song count. There's no easy way to
-    // detect removed tracks, so instead we'll save meta to tags after every
-    // meta play count change instead (eg. removal from player is same event as
-    // deletion from disk).
+    // detect removed tracks, so instead we'll save to tags after every meta
+    // change (eg. removal from player is same event as deletion from disk..
+    // but we don't need to do anything in the latter case).
     else if (DB_EV_PLAYLISTCHANGED == current_event && current_count > previous_count) {
-#ifdef DEBUG
-        trace("TEST: DETECT SONG(S) ADDED\n")
-#endif
+        load_tags_to_missing_meta();
     }
 
     previous_count = current_count;
