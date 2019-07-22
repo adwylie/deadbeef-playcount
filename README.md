@@ -27,9 +27,35 @@ library directory (`~/.local/lib/deadbeef/`).
 ### Configuration
 
 To display the play count value in the GUI we:
-- Right click on the playlist header row, click "Add Column".
+- Right click on the playlist header row, click 'Add Column'.
 - Use the following settings:
     - Title: `Play Count`
     - Type: `Custom`
     - Format: `%play_count%`
-- Click "OK".
+- Click 'OK'.
+
+
+### Notes
+
+Play counts can only be shown for songs that use the ID3v2 (2.3 or 2.4) tag
+format. If play counts are not displayed for songs after the GUI has been
+configured try the following steps:
+
+ * Right-click on a song and select 'Track properties' from the context menu.
+ * Select the 'Properties' tab.
+ * Find the 'Tag Type(s)' key. Its value should contain either "ID3v2.3" or
+"ID3v2.4".
+
+If the song does not have the correct tags we can attempt to convert it to use
+the correct format:
+
+ * Select the 'Metadata' tab.
+ * Click on the 'Settings' button.
+ * Ensure that the 'Write ID3v2' option is selected.
+ * Click 'Close'.
+ * Click 'Apply' to convert the song's tag format.
+ * We're done. Click 'Close' to exit the menu.
+
+The song's count will now be updated after it has played (assuming conversion
+succeeded). You can optionally close and reopen DeaDBeeF to refresh display of
+the play count value.
