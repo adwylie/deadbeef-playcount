@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(playcount LANGUAGES C VERSION 0.1 DESCRIPTION "DeaDBeeF Playcount Plugin")
+project(playcount LANGUAGES C VERSION 1.0 DESCRIPTION "DeaDBeeF Playcount Plugin")
 
 find_file(API deadbeef/deadbeef.h)
 if (NOT API)
