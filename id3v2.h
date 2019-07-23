@@ -1,3 +1,6 @@
+/* Copyright (c) 2019, Andrew Wylie. All rights reserved.   */
+/* Distributed under the terms of the 3-Clause BSD License. */
+/* Full license text available in 'LICENSE' file.           */
 #ifndef PLAYCOUNT_ID3V2_H_
 #define PLAYCOUNT_ID3V2_H_
 
