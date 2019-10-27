@@ -319,23 +319,78 @@ static DB_plugin_action_t *get_actions(DB_playItem_t *it) {
     return NULL;
 }
 
-static uint32_t previous_event = 0;
+// Event handling.
+//
+// Events aren't "singular". Whenever an action is taken by the user, a series
+// of events are produced. For example:
+//
+// Stop button pressed while a song is playing:
+//   5, 15, 1002, 1004, 1000.
+//
+// Previous button pressed while a song is paused:
+//   2, 1004, 1004, 1004, 1002, 1004, 1004, 1000, 1001, 1004, 1004, 1007, 1004, 1004.
+//
+// Playback of a song completes:
+//   1002, 1004, 1004, 1000, 1001, 1004, 1004, 1007.
+//
+// If we have a sequence of events strictly matching playback completion we can
+// then increment the song's play count. Notice that this sequence is contained
+// within the 'previous button press' sequence; this complicates our logic (it's
+// also contained within the 'next button press' sequence).
+static uint32_t previous_events[12] = {0};
+static DB_playItem_t *finished_song;
+static uint32_t finished_song_events[] = {1002, 1004, 1004, 1000, 1001, 1004, 1004, 1007};
+
+// Replace the value at the specified index by the given event.
+// If the value at the specified index is not zero then move it first.
+static void insert_event(uint32_t event, uint8_t idx) {
+
+    if (0 != previous_events[idx] && 0 != idx) {
+        insert_event(previous_events[idx], idx - 1);
+    }
+    previous_events[idx] = event;
+}
+
+static void record_event(uint32_t event) {
+    // Most recent events are stored at the end of the array.
+    insert_event(event, 11);
+}
+
+static int received_song_finished_events() {
+    for (int i = 0; i < 8; i++) {
+        if (finished_song_events[i] != previous_events[i + 4]) {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+static int has_song_finished() {
+    return previous_events[0] != 1  // Signifies 'next' button press.
+            && previous_events[0] != 2  // Signifies 'previous' button press.
+            && received_song_finished_events();
+}
+
+
 static int previous_count = INT_MAX;
 
 static int handle_event(uint32_t current_event, uintptr_t ctx, uint32_t p1, uint32_t p2) {
     UNUSED(p1)
     UNUSED(p2)
 
-    int current_count = deadbeef->pl_getcount(PL_MAIN);
+    // trace("%d\n", current_event)
 
-    // We want to increment the play count when we get a song finished event.
-    // However we also get these event types when the song is stopped (stop
-    // event occurs first).
-    if (DB_EV_SONGFINISHED == current_event && DB_EV_STOP != previous_event) {
-        ddb_event_track_t *event_track = (ddb_event_track_t *) ctx;
-        DB_playItem_t *track = event_track->track;
+    // We want to increment the play count ONLY when we get a song finished
+    // event sequence.
+    record_event(current_event);
 
-        if (is_track_tag_supported(track)) { inc_track_playcount(track); }
+    if (DB_EV_SONGFINISHED == current_event) {
+        finished_song = ((ddb_event_track_t *) ctx)->track;
+    }
+
+    if (has_song_finished() && is_track_tag_supported(finished_song)) {
+        inc_track_playcount(finished_song);
     }
 
     // We want to load tags to meta when adding tracks to the player, and save
@@ -343,16 +398,15 @@ static int handle_event(uint32_t current_event, uintptr_t ctx, uint32_t p1, uint
     //
     // Unfortunately playlist change events don't contain any context and are
     // called by many different actions. We can detect added tracks by using
-    // both the event and the increase in song count. There's no easy way to
-    // detect removed tracks, so instead we'll save to tags after every meta
-    // change (eg. removal from player is same event as deletion from disk..
-    // but we don't need to do anything in the latter case).
-    else if (DB_EV_PLAYLISTCHANGED == current_event && current_count > previous_count) {
+    // both the event and the increase in song count.
+    int current_count = deadbeef->pl_getcount(PL_MAIN);
+
+    if (DB_EV_PLAYLISTCHANGED == current_event && current_count > previous_count) {
         load_tags_to_missing_meta();
     }
 
     previous_count = current_count;
-    previous_event = current_event;
+
     return 0;
 }
 
@@ -360,10 +414,11 @@ static DB_misc_t plugin = {
     .plugin = {
         .type = DB_PLUGIN_MISC,
         .api_vmajor = 1,
-        .api_vminor = 0,
+        .api_vminor = 10,
         .version_major = PROJECT_VERSION_MAJOR,
         .version_minor = PROJECT_VERSION_MINOR,
 
+        .id = NULL,
         .name = "playcount",
         .descr = "keep track of song play counts",
         .copyright =
@@ -392,6 +447,7 @@ static DB_misc_t plugin = {
             "OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.",
         .website = "https://github.com/adwylie/deadbeef-playcount",
 
+        .command = NULL,
         .start = start,
         .stop = stop,
         .connect = connect,

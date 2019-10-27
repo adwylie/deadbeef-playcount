@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(playcount LANGUAGES C VERSION 1.0 DESCRIPTION "DeaDBeeF Playcount Plugin")
+project(playcount LANGUAGES C VERSION 2.0 DESCRIPTION "DeaDBeeF Playcount Plugin")
 
 unset(API CACHE)
 
@@ -17,7 +17,7 @@ set_property(TARGET playcount PROPERTY C_STANDARD 99)
 
 set(CMAKE_C_FLAGS_DEBUG "-g -Og -Wall -pedantic -DDEBUG")
 target_compile_options(playcount PRIVATE
-        -DDDB_API_LEVEL=0 -DDDB_WARN_DEPRECATED=1
+        -DDDB_API_LEVEL=10 -DDDB_WARN_DEPRECATED=1
         -DPROJECT_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
         -DPROJECT_VERSION_MINOR=${PROJECT_VERSION_MINOR})
 

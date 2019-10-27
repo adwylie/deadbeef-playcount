@@ -35,6 +35,23 @@ To display the play count value in the GUI we:
 - Click 'OK'.
 
 
+### Compatibility
+
+| Deadbeef Version | Plugin Version |
+| ---------------: | -------------: |
+|            0.7.2 |            1.0 |
+|            1.8.2 |            2.0 |
+
+Other versions of Deadbeef Player have not been tested.
+
+
+### Known Issues
+
+The play count for a track won't be incremented if playback stops after the
+current track. This is due to the way that events are produced by Deadbeef
+Player.
+
+
 ### Notes
 
 Play counts can only be shown for songs that use the ID3v2 (2.3 or 2.4) tag
