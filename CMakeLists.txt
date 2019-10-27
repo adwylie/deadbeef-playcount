@@ -1,13 +1,15 @@
 cmake_minimum_required(VERSION 3.14)
 project(playcount LANGUAGES C VERSION 1.0 DESCRIPTION "DeaDBeeF Playcount Plugin")
 
-find_file(API deadbeef/deadbeef.h)
+unset(API CACHE)
+
+find_file(API deadbeef.h PATH_SUFFIXES deadbeef HINTS ~ ..)
 if (NOT API)
     message(FATAL_ERROR "DeaDBeeF API: MISSING")
 else()
-    message(STATUS "DeaDBeeF API: present")
     get_filename_component(API_DIR ${API} DIRECTORY)
     include_directories(${API_DIR})
+    message(STATUS "DeaDBeeF API: present (${API})")
 endif()
 
 add_library(playcount SHARED playcount.c id3v2.c)
